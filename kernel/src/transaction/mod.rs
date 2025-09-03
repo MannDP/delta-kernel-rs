@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::iter;
 use std::sync::{Arc, LazyLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+
 
 use crate::actions::{get_log_add_schema, get_log_commit_info_schema, get_log_txn_schema};
 use crate::actions::{CommitInfo, SetTransaction};
@@ -124,12 +124,7 @@ impl Transaction {
             .table_configuration()
             .ensure_write_supported()?;
 
-        // TODO: unify all these into a (safer) `fn current_time_ms()`
-        let commit_timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .ok()
-            .and_then(|d| i64::try_from(d.as_millis()).ok())
-            .ok_or_else(|| Error::generic("Failed to get current time for commit_timestamp"))?;
+        let commit_timestamp = crate::current_time_ms()?;
 
         Ok(Transaction {
             read_snapshot,

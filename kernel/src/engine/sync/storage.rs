@@ -75,8 +75,8 @@ impl StorageHandler for SyncStorageHandler {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
-    use std::time::{Duration, SystemTime};
-    use std::{fs::File, time::UNIX_EPOCH};
+    use std::time::Duration;
+    use std::fs::File;
 
     use bytes::{BufMut, BytesMut};
     use itertools::Itertools;
@@ -95,7 +95,7 @@ mod tests {
         let storage = SyncStorageHandler;
         let tmp_dir = tempfile::tempdir().unwrap();
 
-        let begin_time = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let begin_time = crate::current_time_duration()?;
 
         let path = tmp_dir.path().join(get_json_filename(1));
         let mut f = File::create(path)?;

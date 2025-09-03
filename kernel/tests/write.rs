@@ -88,11 +88,7 @@ async fn test_commit_info() -> Result<(), Box<dyn std::error::Error>> {
 fn check_action_timestamps<'a>(
     parsed_commits: impl Iterator<Item = &'a serde_json::Value>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let now: i64 = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_millis()
-        .try_into()
-        .unwrap();
+    let now: i64 = delta_kernel::current_time_ms()?;
 
     parsed_commits.for_each(|commit| {
         if let Some(commit_info_ts) = &commit.pointer("/commitInfo/timestamp") {
@@ -626,11 +622,7 @@ async fn test_write_txn_actions() -> Result<(), Box<dyn std::error::Error>> {
             .get_mut("timestamp")
             .unwrap() = serde_json::Value::Number(0.into());
 
-        let time_ms: i64 = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_millis()
-            .try_into()
-            .unwrap();
+        let time_ms: i64 = delta_kernel::current_time_ms()?;
 
         // check that last_updated times are identical
         let last_updated1 = parsed_commits[1]

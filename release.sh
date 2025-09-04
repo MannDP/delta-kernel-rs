@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-###################################################################################################
+#aaa#####################################################################################################
 # USAGE:
 # 1. on a release branch: ./release.sh <version> (example: ./release.sh 0.1.0)
 # 2. on main branch (after merging release branch): ./release.sh

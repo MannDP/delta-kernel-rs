@@ -209,10 +209,7 @@ mod tests {
             Field::new("numRecords", ArrowDataType::Int64, true),
         ]);
 
-        let current_time: i64 = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let current_time: i64 = delta_kernel::current_time_ms().unwrap();
 
         let file_metadata = format!(
             r#"{{"path":"{path}", "partitionValues": {{}}, "size": {num_rows}, "modificationTime": {current_time}, "dataChange": true, "numRecords": {num_rows}}}"#,

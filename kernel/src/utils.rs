@@ -2,7 +2,7 @@
 use std::borrow::Cow;
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::table_properties::TableProperties;
 use crate::{DeltaResult, Error};
@@ -104,12 +104,7 @@ pub(crate) fn calculate_transaction_expiration_timestamp(
     table_properties
         .set_transaction_retention_duration
         .map(|duration| -> DeltaResult<i64> {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|e| Error::generic(format!("Failed to get current time: {e}")))?;
-
-            let now_ms = i64::try_from(now.as_millis())
-                .map_err(|_| Error::generic("Current timestamp exceeds i64 millisecond range"))?;
+            let now_ms = current_time_ms()?;
 
             let expiration_ms = i64::try_from(duration.as_millis())
                 .map_err(|_| Error::generic("Retention duration exceeds i64 millisecond range"))?;
@@ -117,6 +112,20 @@ pub(crate) fn calculate_transaction_expiration_timestamp(
             Ok(now_ms - expiration_ms)
         })
         .transpose()
+}
+
+/// Returns the current time as a Duration since Unix epoch.
+pub fn current_time_duration() -> DeltaResult<Duration> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| Error::generic(format!("System time before Unix epoch: {}", e)))
+}
+
+/// Returns the current time in milliseconds since Unix epoch as used by Delta Lake timestamps.
+pub fn current_time_ms() -> DeltaResult<i64> {
+    let duration = current_time_duration()?;
+    i64::try_from(duration.as_millis())
+        .map_err(|_| Error::generic("Current timestamp exceeds i64 millisecond range"))
 }
 
 // Extension trait for Cow<'_, T>
@@ -347,5 +356,62 @@ mod tests {
             url.to_string(),
             "s3://foo/__unitystorage/catalogs/cid/tables/tid/"
         );
+    }
+
+    #[test]
+    fn test_current_time_duration() {
+        let duration = current_time_duration().unwrap();
+        
+        // Duration should be positive (after Unix epoch)
+        assert!(duration.as_secs() > 0);
+        
+        // Duration should be reasonable (between 2020 and 2040)
+        let secs_since_2020 = 1577836800_u64; // 2020-01-01T00:00:00Z
+        let secs_since_2040 = 2208988800_u64; // 2040-01-01T00:00:00Z
+        
+        assert!(duration.as_secs() > secs_since_2020);
+        assert!(duration.as_secs() < secs_since_2040);
+    }
+
+    #[test]
+    fn test_current_time_ms() {
+        let time_ms = current_time_ms().unwrap();
+        
+        // Time should be positive (after Unix epoch)
+        assert!(time_ms > 0);
+        
+        // Time should be reasonable (between 2020 and 2040) 
+        let ms_since_2020 = 1577836800_000_i64; // 2020-01-01T00:00:00Z
+        let ms_since_2040 = 2208988800_000_i64; // 2040-01-01T00:00:00Z
+        
+        assert!(time_ms > ms_since_2020);
+        assert!(time_ms < ms_since_2040);
+    }
+
+    #[test]
+    fn test_time_functions_consistency() {
+        // Both functions should return consistent values
+        let duration = current_time_duration().unwrap();
+        let time_ms = current_time_ms().unwrap();
+        
+        let duration_as_ms = i64::try_from(duration.as_millis()).unwrap();
+        
+        // They should be very close (within a few milliseconds)
+        let diff = (duration_as_ms - time_ms).abs();
+        assert!(diff < 100, "Duration and milliseconds should be consistent, diff: {}", diff);
+    }
+
+    #[test]
+    fn test_time_functions_monotonic() {
+        // Subsequent calls should return increasing or equal times
+        let time1 = current_time_ms().unwrap();
+        let time2 = current_time_ms().unwrap();
+        
+        assert!(time2 >= time1, "Time should be monotonic: {} >= {}", time2, time1);
+        
+        let duration1 = current_time_duration().unwrap();
+        let duration2 = current_time_duration().unwrap();
+        
+        assert!(duration2 >= duration1, "Duration should be monotonic");
     }
 }

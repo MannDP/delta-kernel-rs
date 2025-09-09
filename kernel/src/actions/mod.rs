@@ -889,10 +889,12 @@ impl DomainMetadata {
         self.domain.starts_with(INTERNAL_DOMAIN_PREFIX)
     }
 
+    #[allow(unused)]
     pub(crate) fn domain(&self) -> &str {
         &self.domain
     }
 
+    #[allow(unused)]
     pub(crate) fn new(domain: String, configuration: String, removed: bool) -> Self {
         Self {
             domain,

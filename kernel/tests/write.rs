@@ -1168,6 +1168,9 @@ async fn test_set_domain_metadata_basic() -> Result<(), Box<dyn std::error::Erro
         let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
         let mut txn = snapshot.transaction()?;
 
+        // write context does not conflict with domain metadata in any way
+        let _write_context = txn.get_write_context();
+
         // Set multiple domain metadata
         let domain1 = "app.config";
         let config1 = r#"{"version": 1}"#;

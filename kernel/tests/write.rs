@@ -1210,6 +1210,13 @@ async fn test_set_domain_metadata_basic() -> Result<(), Box<dyn std::error::Erro
                 _ => panic!("Unexpected domain: {}", domain),
             }
         }
+
+        // Verify reads see the domain metadata
+        let final_snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
+        let domain1_config = final_snapshot.get_domain_metadata(domain1, &engine)?;
+        assert_eq!(domain1_config, Some(config1.to_string()));
+        let domain2_config = final_snapshot.get_domain_metadata(domain2, &engine)?;
+        assert_eq!(domain2_config, Some(config2.to_string()));
     }
     Ok(())
 }
@@ -1245,6 +1252,115 @@ async fn test_set_domain_metadata_errors() -> Result<(), Box<dyn std::error::Err
         assert!(err
             .to_string()
             .contains("already specified in this transaction"));
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_remove_domain_metadata_basic() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let schema = Arc::new(StructType::new(vec![StructField::nullable("number", DataType::INTEGER)]));
+
+    for (table_url, engine, store, table_name) in setup_test_tables(schema.clone(), &[], None, "test_table").await? {
+        let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
+        let mut txn = snapshot.transaction()?;
+
+        // Remove domain metadata (creates tombstone even if it doesn't exist)
+        txn.remove_domain_metadata("app.deprecated".to_string())?;
+        txn.commit(&engine)?;
+
+        let commit_data = store
+            .get(&Path::from(format!(
+                "/{table_name}/_delta_log/00000000000000000001.json"
+            )))
+            .await?
+            .bytes()
+            .await?;
+        let actions: Vec<serde_json::Value> = Deserializer::from_slice(&commit_data)
+            .into_iter()
+            .try_collect()?;
+
+        let domain_action = actions.iter().find(|v| v.get("domainMetadata").is_some()).unwrap();
+        assert_eq!(domain_action["domainMetadata"]["domain"], "app.deprecated");
+        assert_eq!(domain_action["domainMetadata"]["configuration"], "");
+        assert_eq!(domain_action["domainMetadata"]["removed"], true);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_domain_metadata_set_remove_conflicts() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let schema = Arc::new(StructType::new(vec![StructField::nullable("number", DataType::INTEGER)]));
+
+    for (table_url, engine, _, _) in setup_test_tables(schema.clone(), &[], None, "test_table").await? {
+        let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
+        let mut txn = snapshot.transaction()?;
+
+        // Test 1: Set then remove in same transaction
+        txn.set_domain_metadata("app.config".to_string(), "v1".to_string())?;
+        let err = txn.remove_domain_metadata("app.config".to_string()).unwrap_err();
+        assert!(err.to_string().contains("already specified in this transaction"));
+
+        // Test 2: Remove then set in same transaction
+        txn.remove_domain_metadata("test.domain".to_string())?;
+        let err = txn.set_domain_metadata("test.domain".to_string(), "v1".to_string()).unwrap_err();
+        assert!(err.to_string().contains("already specified in this transaction"));
+
+        // Test 3: Remove then remove same domain
+        txn.remove_domain_metadata("another.domain".to_string())?;
+        let err = txn.remove_domain_metadata("another.domain".to_string()).unwrap_err();
+        assert!(err.to_string().contains("already specified in this transaction"));
+
+        // Test 4: System domain removal
+        let err = txn.remove_domain_metadata("delta.system".to_string()).unwrap_err();
+        assert!(err.to_string().contains("system-controlled 'delta.*' domain"));
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_domain_metadata_set_then_remove_across_transactions() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let schema = Arc::new(StructType::new(vec![StructField::nullable("number", DataType::INTEGER)]));
+
+    for (table_url, engine, store, table_name) in setup_test_tables(schema.clone(), &[], None, "test_table").await? {
+        // Transaction 1: Set domain metadata
+        let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
+        let mut txn = snapshot.transaction()?;
+        txn.set_domain_metadata("app.config".to_string(), r#"{"version": 1}"#.to_string())?;
+        txn.commit(&engine)?;
+
+        // Transaction 2: Remove the same domain metadata
+        let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
+        let mut txn = snapshot.transaction()?;
+        txn.remove_domain_metadata("app.config".to_string())?;
+        txn.commit(&engine)?;
+
+        // Verify removal commit
+        let commit_data = store
+            .get(&Path::from(format!(
+                "/{table_name}/_delta_log/00000000000000000002.json"
+            )))
+            .await?
+            .bytes()
+            .await?;
+        let actions: Vec<serde_json::Value> = Deserializer::from_slice(&commit_data)
+            .into_iter()
+            .try_collect()?;
+
+        let domain_action = actions.iter().find(|v| v.get("domainMetadata").is_some()).unwrap();
+        assert_eq!(domain_action["domainMetadata"]["domain"], "app.config");
+        assert_eq!(domain_action["domainMetadata"]["configuration"], "");
+        assert_eq!(domain_action["domainMetadata"]["removed"], true);
+
+        // Verify reads see the metadata removal
+        let final_snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
+        let domain_config = final_snapshot.get_domain_metadata("app.config", &engine)?;
+        assert_eq!(domain_config, None); // Should be None after removal
     }
     Ok(())
 }

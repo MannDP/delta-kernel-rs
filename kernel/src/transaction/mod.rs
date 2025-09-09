@@ -313,6 +313,16 @@ impl Transaction {
         }
         Ok(())
     }
+
+    /// Remove domain metadata from the Delta log. This creates a tombstone action in the log to 
+    /// logically delete the specified domain. System-controlled domains (those starting with `delta.`) 
+    /// cannot be modified.
+    pub fn remove_domain_metadata(&mut self, domain: String) -> DeltaResult<()> {
+        let domain_metadata = DomainMetadata::new(domain.clone(), "".to_string(), true);
+        self.validate_domain_metadata(&domain_metadata)?;
+        self.domain_metadata.insert(domain, domain_metadata);
+        Ok(())
+    }
 }
 
 /// Convert file metadata provided by the engine into protocol-compliant add actions.

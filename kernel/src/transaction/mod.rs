@@ -282,7 +282,7 @@ impl Transaction {
 
     /// Set domain metadata to be written to the Delta log. Each domain can only be modified once per
     /// transaction. System-controlled domains (those starting with `delta.`) cannot be modified.
-    pub fn set_domain_metadata(
+    pub(crate) fn set_domain_metadata(
         &mut self,
         domain: String,
         configuration: String,

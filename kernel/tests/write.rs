@@ -1152,3 +1152,90 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_set_domain_metadata_basic() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let schema = Arc::new(StructType::new(vec![StructField::nullable(
+        "number",
+        DataType::INTEGER,
+    )]));
+
+    for (table_url, engine, store, table_name) in
+        setup_test_tables(schema.clone(), &[], None, "test_table").await?
+    {
+        let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
+        let mut txn = snapshot.transaction()?;
+
+        // Set multiple domain metadata
+        let domain1 = "app.config";
+        let config1 = r#"{"version": 1}"#;
+        let domain2 = "spark.settings";
+        let config2 = r#"{"cores": 4}"#;
+
+        txn.set_domain_metadata(domain1.into(), config1.into())?;
+        txn.set_domain_metadata(domain2.into(), config2.into())?;
+        txn.commit(&engine)?;
+
+        let commit_data = store
+            .get(&Path::from(format!(
+                "/{table_name}/_delta_log/00000000000000000001.json"
+            )))
+            .await?
+            .bytes()
+            .await?;
+        let actions: Vec<serde_json::Value> = Deserializer::from_slice(&commit_data)
+            .into_iter()
+            .try_collect()?;
+
+        let domain_actions: Vec<_> = actions
+            .iter()
+            .filter(|v| v.get("domainMetadata").is_some())
+            .collect();
+        assert_eq!(domain_actions.len(), 2);
+
+        // Check domains and their configurations
+        for action in &domain_actions {
+            let domain = action["domainMetadata"]["domain"].as_str().unwrap();
+            let config = action["domainMetadata"]["configuration"].as_str().unwrap();
+            assert!(!action["domainMetadata"]["removed"].as_bool().unwrap());
+
+            match domain {
+                d if d == domain1 => assert_eq!(config, config1),
+                d if d == domain2 => assert_eq!(config, config2),
+                _ => panic!("Unexpected domain: {}", domain),
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_set_domain_metadata_errors() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let schema = Arc::new(StructType::new(vec![StructField::nullable(
+        "number",
+        DataType::INTEGER,
+    )]));
+
+    for (table_url, engine, _, _) in
+        setup_test_tables(schema.clone(), &[], None, "test_table").await?
+    {
+        let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
+        let mut txn = snapshot.transaction()?;
+
+        // System domain rejection
+        assert!(txn
+            .set_domain_metadata("delta.system".into(), "config".into())
+            .is_err());
+
+        // Duplicate domain rejection
+        txn.set_domain_metadata("app.config".into(), "v1".into())?;
+        assert!(txn
+            .set_domain_metadata("app.config".into(), "v2".into())
+            .is_err());
+    }
+    Ok(())
+}

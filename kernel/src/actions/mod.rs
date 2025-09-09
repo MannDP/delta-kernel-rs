@@ -877,9 +877,9 @@ pub(crate) struct CheckpointMetadata {
 #[derive(Debug, Clone, PartialEq, Eq, ToSchema, IntoEngineData)]
 #[internal_api]
 pub(crate) struct DomainMetadata {
-    pub(crate) domain: String,
-    pub(crate) configuration: String,
-    pub(crate) removed: bool,
+    domain: String,
+    configuration: String,
+    removed: bool,
 }
 
 impl DomainMetadata {
@@ -888,6 +888,18 @@ impl DomainMetadata {
     #[allow(unused)]
     pub(crate) fn is_internal(&self) -> bool {
         self.domain.starts_with(INTERNAL_DOMAIN_PREFIX)
+    }
+
+    pub fn domain(&self) -> &str {
+        &self.domain
+    }
+
+    pub(crate) fn new(domain: String, configuration: String, removed: bool) -> Self {
+        Self {
+            domain,
+            configuration,
+            removed,
+        }
     }
 }
 

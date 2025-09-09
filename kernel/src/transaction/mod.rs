@@ -1,10 +1,13 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::iter;
 use std::sync::{Arc, LazyLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::actions::domain_metadata::DomainMetadataMap;
-use crate::actions::{DomainMetadata, get_log_add_schema, get_log_commit_info_schema, get_log_domain_metadata_schema, get_log_txn_schema};
+use crate::actions::{
+    get_log_add_schema, get_log_commit_info_schema, get_log_domain_metadata_schema,
+    get_log_txn_schema, DomainMetadata,
+};
 use crate::actions::{CommitInfo, SetTransaction};
 use crate::error::Error;
 use crate::expressions::UnaryExpressionOp;
@@ -282,12 +285,14 @@ impl Transaction {
         self.add_files_metadata.push(add_metadata);
     }
 
-    pub fn add_domain_metadata(&mut self, domain: String, configuration: String) -> DeltaResult<()> {
-        let domain_metadata = DomainMetadata {
-            domain: domain.clone(),
-            configuration: configuration.to_string(),
-            removed: false,
-        };
+    /// Set domain metadata to be written to the Delta log. Each domain can only be modified once per
+    /// transaction. System-controlled domains (those starting with `delta.`) cannot be modified.
+    pub fn set_domain_metadata(
+        &mut self,
+        domain: String,
+        configuration: String,
+    ) -> DeltaResult<()> {
+        let domain_metadata = DomainMetadata::new(domain.clone(), configuration, false);
         self.validate_domain_metadata(&domain_metadata)?;
         self.domain_metadata.insert(domain, domain_metadata);
         Ok(())
@@ -295,23 +300,17 @@ impl Transaction {
 
     fn validate_domain_metadata(&self, domain_metadata: &DomainMetadata) -> DeltaResult<()> {
         if domain_metadata.is_internal() {
-            return Err(Error::Generic("User metadata cannot be added to system-controlled 'delta.*' domain".to_string()));
+            return Err(Error::Generic(
+                "User metadata cannot be added to system-controlled 'delta.*' domain".to_string(),
+            ));
         }
 
-        if self.domain_metadata.contains_key(&domain_metadata.domain) {
-            return Err(Error::Generic(format!("Metadata for domain {} already specified in this transaction", domain_metadata.domain)));
+        if self.domain_metadata.contains_key(domain_metadata.domain()) {
+            return Err(Error::Generic(format!(
+                "Metadata for domain {} already specified in this transaction",
+                domain_metadata.domain()
+            )));
         }
-        Ok(())
-    }
-
-    pub fn remove_domain_metadata(&mut self, domain: String) -> DeltaResult<()> {
-        let domain_metadata = DomainMetadata {
-            domain: domain.clone(),
-            configuration: "".to_string(),
-            removed: true,
-        };
-        self.validate_domain_metadata(&domain_metadata)?;
-        self.domain_metadata.insert(domain, domain_metadata);
         Ok(())
     }
 }

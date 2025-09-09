@@ -2,7 +2,10 @@ use std::collections::HashSet;
 use std::iter;
 use std::sync::{Arc, LazyLock};
 
-use crate::actions::{get_log_add_schema, get_log_commit_info_schema, get_log_txn_schema};
+use crate::actions::{
+    get_log_add_schema, get_log_commit_info_schema, get_log_domain_metadata_schema,
+    get_log_txn_schema, DomainMetadata,
+};
 use crate::actions::{CommitInfo, SetTransaction};
 use crate::error::Error;
 use crate::expressions::UnaryExpressionOp;
@@ -97,6 +100,7 @@ pub struct Transaction {
     // commit-wide timestamp (in milliseconds since epoch) - used in ICT, `txn` action, etc. to
     // keep all timestamps within the same commit consistent.
     commit_timestamp: i64,
+    domain_metadatas: Vec<DomainMetadata>,
 }
 
 impl std::fmt::Debug for Transaction {
@@ -133,6 +137,7 @@ impl Transaction {
             add_files_metadata: vec![],
             set_transactions: vec![],
             commit_timestamp,
+            domain_metadatas: vec![],
         })
     }
 
@@ -160,6 +165,40 @@ impl Transaction {
             .into_iter()
             .map(|txn| txn.into_engine_data(get_log_txn_schema().clone(), engine));
 
+        // Validate that the table supports domain metadata operations if we're writing any
+        if !self.domain_metadatas.is_empty()
+            && !self
+                .read_snapshot
+                .table_configuration()
+                .is_domain_metadata_supported()
+        {
+            return Err(Error::unsupported(
+                "Domain metadata operations require writer version 7 and the 'domainMetadata' writer feature"
+            ));
+        }
+
+        // we cannot have multiple domain metadata actions for the same domain in a single transaction
+        let mut domains = HashSet::new();
+        for domain_metadata in &self.domain_metadatas {
+            if domain_metadata.is_internal() {
+                return Err(Error::Generic(
+                    "Users cannot modify system controlled metadata domains".to_string(),
+                ));
+            }
+            if !domains.insert(domain_metadata.domain()) {
+                return Err(Error::Generic(format!(
+                    "Metadata for domain {} already specified in this transaction",
+                    domain_metadata.domain()
+                )));
+            }
+        }
+
+        let set_domain_metadata_actions = self
+            .domain_metadatas
+            .clone()
+            .into_iter()
+            .map(|dm| dm.into_engine_data(get_log_domain_metadata_schema().clone(), engine));
+
         // step one: construct the iterator of commit info + file actions we want to commit
         let commit_info = CommitInfo::new(
             self.commit_timestamp,
@@ -174,7 +213,8 @@ impl Transaction {
 
         let actions = iter::once(commit_info_action)
             .chain(add_actions)
-            .chain(set_transaction_actions);
+            .chain(set_transaction_actions)
+            .chain(set_domain_metadata_actions);
 
         // step two: set new commit version (current_version + 1) and path to write
         let commit_version = self.read_snapshot.version() + 1;
@@ -265,6 +305,17 @@ impl Transaction {
     /// The expected schema for `add_metadata` is given by [`add_files_schema`].
     pub fn add_files(&mut self, add_metadata: Box<dyn EngineData>) {
         self.add_files_metadata.push(add_metadata);
+    }
+
+    /// Set domain metadata to be written to the Delta log.
+    /// Note that each domain can only appear once per transaction. That is, multiple configurations
+    /// of the same domain are disallowed in a single transaction, as well as setting and removing
+    /// the same domain in a single transaction. If a duplicate domain is included, the `commit` will
+    /// fail (that is, we don't eagerly check domain validity here).
+    pub fn with_domain_metadata(mut self, domain: String, configuration: String) -> Self {
+        self.domain_metadatas
+            .push(DomainMetadata::new(domain.clone(), configuration, false));
+        self
     }
 }
 

@@ -885,8 +885,20 @@ impl DomainMetadata {
     // returns true if the domain metadata is an system-controlled domain (all domains that start
     // with "delta.")
     #[allow(unused)]
-    fn is_internal(&self) -> bool {
+    pub(crate) fn is_internal(&self) -> bool {
         self.domain.starts_with(INTERNAL_DOMAIN_PREFIX)
+    }
+
+    pub(crate) fn domain(&self) -> &str {
+        &self.domain
+    }
+
+    pub(crate) fn new(domain: String, configuration: String, removed: bool) -> Self {
+        Self {
+            domain,
+            configuration,
+            removed,
+        }
     }
 }
 
@@ -1297,6 +1309,7 @@ mod tests {
                 WriterFeature::AppendOnly,
                 WriterFeature::DeletionVectors,
                 WriterFeature::Invariants,
+                WriterFeature::DomainMetadata,
             ]),
         )
         .unwrap();
@@ -1311,7 +1324,7 @@ mod tests {
         .unwrap();
         assert_result_error_with_message(
             protocol.ensure_write_supported(),
-            r#"Unsupported: Unknown WriterFeatures: "rowTracking". Supported WriterFeatures: "appendOnly", "deletionVectors", "invariants", "timestampNtz", "variantType", "variantType-preview", "variantShredding-preview""#,
+            r#"Unsupported: Unknown WriterFeatures: "rowTracking". Supported WriterFeatures: "appendOnly", "deletionVectors", "domainMetadata", "invariants", "timestampNtz", "variantType", "variantType-preview", "variantShredding-preview""#,
         );
     }
 

@@ -1230,13 +1230,21 @@ async fn test_set_domain_metadata_errors() -> Result<(), Box<dyn std::error::Err
         let mut txn = snapshot.transaction()?;
 
         // System domain rejection
-        let err = txn.set_domain_metadata("delta.system".to_string(), "config".to_string()).unwrap_err();
-        assert!(err.to_string().contains("system-controlled 'delta.*' domain"));
+        let err = txn
+            .set_domain_metadata("delta.system".to_string(), "config".to_string())
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("system-controlled 'delta.*' domain"));
 
         // Duplicate domain rejection
         txn.set_domain_metadata("app.config".to_string(), "v1".to_string())?;
-        let err = txn.set_domain_metadata("app.config".to_string(), "v2".to_string()).unwrap_err();
-        assert!(err.to_string().contains("already specified in this transaction"));
+        let err = txn
+            .set_domain_metadata("app.config".to_string(), "v2".to_string())
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("already specified in this transaction"));
     }
     Ok(())
 }

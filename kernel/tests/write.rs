@@ -1174,8 +1174,8 @@ async fn test_set_domain_metadata_basic() -> Result<(), Box<dyn std::error::Erro
         let domain2 = "spark.settings";
         let config2 = r#"{"cores": 4}"#;
 
-        txn.set_domain_metadata(domain1.into(), config1.into())?;
-        txn.set_domain_metadata(domain2.into(), config2.into())?;
+        txn.set_domain_metadata(domain1.to_string(), config1.to_string())?;
+        txn.set_domain_metadata(domain2.to_string(), config2.to_string())?;
         txn.commit(&engine)?;
 
         let commit_data = store
@@ -1227,15 +1227,13 @@ async fn test_set_domain_metadata_errors() -> Result<(), Box<dyn std::error::Err
         let mut txn = snapshot.transaction()?;
 
         // System domain rejection
-        assert!(txn
-            .set_domain_metadata("delta.system".into(), "config".into())
-            .is_err());
+        let err = txn.set_domain_metadata("delta.system".to_string(), "config".to_string()).unwrap_err();
+        assert!(err.to_string().contains("system-controlled 'delta.*' domain"));
 
         // Duplicate domain rejection
-        txn.set_domain_metadata("app.config".into(), "v1".into())?;
-        assert!(txn
-            .set_domain_metadata("app.config".into(), "v2".into())
-            .is_err());
+        txn.set_domain_metadata("app.config".to_string(), "v1".to_string())?;
+        let err = txn.set_domain_metadata("app.config".to_string(), "v2".to_string()).unwrap_err();
+        assert!(err.to_string().contains("already specified in this transaction"));
     }
     Ok(())
 }

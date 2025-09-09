@@ -890,7 +890,7 @@ impl DomainMetadata {
         self.domain.starts_with(INTERNAL_DOMAIN_PREFIX)
     }
 
-    pub fn domain(&self) -> &str {
+    pub(crate) fn domain(&self) -> &str {
         &self.domain
     }
 

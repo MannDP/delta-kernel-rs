@@ -877,16 +877,16 @@ pub(crate) struct CheckpointMetadata {
 #[derive(Debug, Clone, PartialEq, Eq, ToSchema, IntoEngineData)]
 #[internal_api]
 pub(crate) struct DomainMetadata {
-    domain: String,
-    configuration: String,
-    removed: bool,
+    pub(crate) domain: String,
+    pub(crate) configuration: String,
+    pub(crate) removed: bool,
 }
 
 impl DomainMetadata {
     // returns true if the domain metadata is an system-controlled domain (all domains that start
     // with "delta.")
     #[allow(unused)]
-    fn is_internal(&self) -> bool {
+    pub(crate) fn is_internal(&self) -> bool {
         self.domain.starts_with(INTERNAL_DOMAIN_PREFIX)
     }
 }

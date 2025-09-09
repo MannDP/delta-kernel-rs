@@ -1,9 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::iter;
 use std::sync::{Arc, LazyLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::actions::{get_log_add_schema, get_log_commit_info_schema, get_log_txn_schema};
+use crate::actions::domain_metadata::DomainMetadataMap;
+use crate::actions::{DomainMetadata, get_log_add_schema, get_log_commit_info_schema, get_log_domain_metadata_schema, get_log_txn_schema};
 use crate::actions::{CommitInfo, SetTransaction};
 use crate::error::Error;
 use crate::expressions::UnaryExpressionOp;
@@ -97,6 +98,7 @@ pub struct Transaction {
     // commit-wide timestamp (in milliseconds since epoch) - used in ICT, `txn` action, etc. to
     // keep all timestamps within the same commit consistent.
     commit_timestamp: i64,
+    domain_metadata: DomainMetadataMap,
 }
 
 impl std::fmt::Debug for Transaction {
@@ -138,6 +140,7 @@ impl Transaction {
             add_files_metadata: vec![],
             set_transactions: vec![],
             commit_timestamp,
+            domain_metadata: HashMap::new(),
         })
     }
 
@@ -165,6 +168,12 @@ impl Transaction {
             .into_iter()
             .map(|txn| txn.into_engine_data(get_log_txn_schema().clone(), engine));
 
+        let set_domain_metadata_actions = self
+            .domain_metadata
+            .clone()
+            .into_values()
+            .map(|dm| dm.into_engine_data(get_log_domain_metadata_schema().clone(), engine));
+
         // step one: construct the iterator of commit info + file actions we want to commit
         let commit_info = CommitInfo::new(
             self.commit_timestamp,
@@ -179,7 +188,8 @@ impl Transaction {
 
         let actions = iter::once(commit_info_action)
             .chain(add_actions)
-            .chain(set_transaction_actions);
+            .chain(set_transaction_actions)
+            .chain(set_domain_metadata_actions);
 
         // step two: set new commit version (current_version + 1) and path to write
         let commit_version = self.read_snapshot.version() + 1;
@@ -270,6 +280,39 @@ impl Transaction {
     /// The expected schema for `add_metadata` is given by [`add_files_schema`].
     pub fn add_files(&mut self, add_metadata: Box<dyn EngineData>) {
         self.add_files_metadata.push(add_metadata);
+    }
+
+    pub fn add_domain_metadata(&mut self, domain: String, configuration: String) -> DeltaResult<()> {
+        let domain_metadata = DomainMetadata {
+            domain: domain.clone(),
+            configuration: configuration.to_string(),
+            removed: false,
+        };
+        self.validate_domain_metadata(&domain_metadata)?;
+        self.domain_metadata.insert(domain, domain_metadata);
+        Ok(())
+    }
+
+    fn validate_domain_metadata(&self, domain_metadata: &DomainMetadata) -> DeltaResult<()> {
+        if domain_metadata.is_internal() {
+            return Err(Error::Generic("User metadata cannot be added to system-controlled 'delta.*' domain".to_string()));
+        }
+
+        if self.domain_metadata.contains_key(&domain_metadata.domain) {
+            return Err(Error::Generic(format!("Metadata for domain {} already specified in this transaction", domain_metadata.domain)));
+        }
+        Ok(())
+    }
+
+    pub fn remove_domain_metadata(&mut self, domain: String) -> DeltaResult<()> {
+        let domain_metadata = DomainMetadata {
+            domain: domain.clone(),
+            configuration: "".to_string(),
+            removed: true,
+        };
+        self.validate_domain_metadata(&domain_metadata)?;
+        self.domain_metadata.insert(domain, domain_metadata);
+        Ok(())
     }
 }
 

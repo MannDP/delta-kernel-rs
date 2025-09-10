@@ -238,6 +238,7 @@ pub async fn create_table(
     enable_timestamp_without_timezone: bool,
     enable_variant: bool,
     enable_column_mapping: bool,
+    enable_domain_metadata: bool,
 ) -> Result<Url, Box<dyn std::error::Error>> {
     let table_id = "test_id";
     let schema = serde_json::to_string(&schema)?;
@@ -264,6 +265,9 @@ pub async fn create_table(
             // tests that do column mapping on writes. for now omit the writer feature to let tests
             // run, but after actual support this should be enabled.
             // writer_features.push("columnMapping");
+        }
+        if enable_domain_metadata {
+            writer_features.push("domainMetadata");
         }
         (reader_features, writer_features)
     };
@@ -349,6 +353,7 @@ pub async fn setup_test_tables(
                 false,
                 false,
                 false,
+                false,
             )
             .await?,
             engine_37,
@@ -361,6 +366,7 @@ pub async fn setup_test_tables(
                 table_location_11,
                 schema,
                 partition_columns,
+                false,
                 false,
                 false,
                 false,

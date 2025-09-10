@@ -310,6 +310,17 @@ impl TableConfiguration {
                 .unwrap_or(false)
     }
 
+    /// Returns `true` if domain metadata is supported on this table.
+    /// To support this feature the table must:
+    /// - Have a min_writer_version of 7
+    /// - Have the [`WriterFeature::DomainMetadata`] writer feature.
+    pub(crate) fn is_domain_metadata_supported(&self) -> bool {
+        self.protocol().min_writer_version() == 7
+            && self
+                .protocol()
+                .has_writer_feature(&WriterFeature::DomainMetadata)
+    }
+
     /// If in-commit timestamps is enabled, returns a tuple of the in-commit timestamp enablement
     /// version and timestamp.
     ///

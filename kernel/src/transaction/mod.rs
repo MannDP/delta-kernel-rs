@@ -165,6 +165,19 @@ impl Transaction {
             .into_iter()
             .map(|txn| txn.into_engine_data(get_log_txn_schema().clone(), engine));
 
+        // Validate that the table supports domain metadata operations if we're writing any
+        if !self.domain_metadatas.is_empty() {
+            if !self
+                .read_snapshot
+                .table_configuration()
+                .is_domain_metadata_supported()
+            {
+                return Err(Error::unsupported(
+                    "Domain metadata operations require writer version 7 and the 'domainMetadata' writer feature"
+                ));
+            }
+        }
+
         // we cannot have multiple domain metadata actions for the same domain in a single transaction
         let mut domains = HashSet::new();
         for domain_metadata in &self.domain_metadatas {

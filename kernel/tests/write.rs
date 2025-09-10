@@ -1234,21 +1234,20 @@ async fn test_set_domain_metadata_errors() -> Result<(), Box<dyn std::error::Err
         setup_test_tables(schema.clone(), &[], None, "test_table").await?
     {
         let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
-        let mut txn = snapshot.transaction()?;
+        let mut txn = snapshot.clone().transaction()?;
 
-        // System domain rejection
-        let err = txn
-            .set_domain_metadata("delta.system".to_string(), "config".to_string())
-            .unwrap_err();
+        // Scenario 1: System domain rejection
+        txn.set_domain_metadata("delta.system".to_string(), "config".to_string())?;
+        let err = txn.commit(&engine).unwrap_err();
         assert!(err
             .to_string()
             .contains("system-controlled 'delta.*' domain"));
 
-        // Duplicate domain rejection
-        txn.set_domain_metadata("app.config".to_string(), "v1".to_string())?;
-        let err = txn
-            .set_domain_metadata("app.config".to_string(), "v2".to_string())
-            .unwrap_err();
+        // Scenario 2: Duplicate domain rejection
+        let mut txn2 = snapshot.clone().transaction()?;
+        txn2.set_domain_metadata("app.config".to_string(), "v1".to_string())?;
+        txn2.set_domain_metadata("app.config".to_string(), "v2".to_string())?;
+        let err = txn2.commit(&engine).unwrap_err();
         assert!(err
             .to_string()
             .contains("already specified in this transaction"));
@@ -1297,25 +1296,32 @@ async fn test_domain_metadata_set_remove_conflicts() -> Result<(), Box<dyn std::
 
     for (table_url, engine, _, _) in setup_test_tables(schema.clone(), &[], None, "test_table").await? {
         let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
-        let mut txn = snapshot.transaction()?;
+        let mut txn = snapshot.clone().transaction()?;
 
-        // Test 1: Set then remove in same transaction
+        // Scenario 1: Set then remove same domain
         txn.set_domain_metadata("app.config".to_string(), "v1".to_string())?;
-        let err = txn.remove_domain_metadata("app.config".to_string()).unwrap_err();
+        txn.remove_domain_metadata("app.config".to_string())?;
+        let err = txn.commit(&engine).unwrap_err();
         assert!(err.to_string().contains("already specified in this transaction"));
 
-        // Test 2: Remove then set in same transaction
-        txn.remove_domain_metadata("test.domain".to_string())?;
-        let err = txn.set_domain_metadata("test.domain".to_string(), "v1".to_string()).unwrap_err();
+        // Scenario 2: Remove then set same domain
+        let mut txn2 = snapshot.clone().transaction()?;
+        txn2.remove_domain_metadata("test.domain".to_string())?;
+        txn2.set_domain_metadata("test.domain".to_string(), "v1".to_string())?;
+        let err = txn2.commit(&engine).unwrap_err();
         assert!(err.to_string().contains("already specified in this transaction"));
 
-        // Test 3: Remove then remove same domain
-        txn.remove_domain_metadata("another.domain".to_string())?;
-        let err = txn.remove_domain_metadata("another.domain".to_string()).unwrap_err();
+        // Scenario 3: Remove then remove same domain
+        let mut txn3 = snapshot.clone().transaction()?;
+        txn3.remove_domain_metadata("another.domain".to_string())?;
+        txn3.remove_domain_metadata("another.domain".to_string())?;
+        let err = txn3.commit(&engine).unwrap_err();
         assert!(err.to_string().contains("already specified in this transaction"));
 
-        // Test 4: System domain removal
-        let err = txn.remove_domain_metadata("delta.system".to_string()).unwrap_err();
+        // Scenario 4: System domain removal
+        let mut txn4 = snapshot.clone().transaction()?;
+        txn4.remove_domain_metadata("delta.system".to_string())?;
+        let err = txn4.commit(&engine).unwrap_err();
         assert!(err.to_string().contains("system-controlled 'delta.*' domain"));
     }
     Ok(())

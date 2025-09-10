@@ -1,9 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::iter;
 use std::sync::{Arc, LazyLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::actions::domain_metadata::DomainMetadataMap;
 use crate::actions::{
     get_log_add_schema, get_log_commit_info_schema, get_log_domain_metadata_schema,
     get_log_txn_schema, DomainMetadata,
@@ -101,7 +100,7 @@ pub struct Transaction {
     // commit-wide timestamp (in milliseconds since epoch) - used in ICT, `txn` action, etc. to
     // keep all timestamps within the same commit consistent.
     commit_timestamp: i64,
-    domain_metadata: DomainMetadataMap,
+    domain_metadatas: Vec<DomainMetadata>,
 }
 
 impl std::fmt::Debug for Transaction {
@@ -143,7 +142,7 @@ impl Transaction {
             add_files_metadata: vec![],
             set_transactions: vec![],
             commit_timestamp,
-            domain_metadata: HashMap::new(),
+            domain_metadatas: vec![],
         })
     }
 
@@ -171,10 +170,26 @@ impl Transaction {
             .into_iter()
             .map(|txn| txn.into_engine_data(get_log_txn_schema().clone(), engine));
 
+        // we cannot have multiple domain metadata actions for the same domain in a single transaction
+        let mut domains = HashSet::new();
+        for domain_metadata in &self.domain_metadatas {
+            if domain_metadata.is_internal() {
+                return Err(Error::Generic(
+                    "User metadata cannot be added to system-controlled 'delta.*' domain".to_string(),
+                ));
+            }
+            if !domains.insert(domain_metadata.domain()) {
+                return Err(Error::Generic(format!(
+                    "Metadata for domain {} already specified in this transaction",
+                    domain_metadata.domain()
+                )));
+            }
+        }
+
         let set_domain_metadata_actions = self
-            .domain_metadata
+            .domain_metadatas
             .clone()
-            .into_values()
+            .into_iter()
             .map(|dm| dm.into_engine_data(get_log_domain_metadata_schema().clone(), engine));
 
         // step one: construct the iterator of commit info + file actions we want to commit
@@ -292,35 +307,18 @@ impl Transaction {
         domain: String,
         configuration: String,
     ) -> DeltaResult<()> {
-        let domain_metadata = DomainMetadata::new(domain.clone(), configuration, false);
-        self.validate_domain_metadata(&domain_metadata)?;
-        self.domain_metadata.insert(domain, domain_metadata);
+        let domain_metadata = DomainMetadata::new(domain, configuration, false);
+        self.domain_metadatas.push(domain_metadata);
         Ok(())
     }
 
-    fn validate_domain_metadata(&self, domain_metadata: &DomainMetadata) -> DeltaResult<()> {
-        if domain_metadata.is_internal() {
-            return Err(Error::Generic(
-                "User metadata cannot be added to system-controlled 'delta.*' domain".to_string(),
-            ));
-        }
-
-        if self.domain_metadata.contains_key(domain_metadata.domain()) {
-            return Err(Error::Generic(format!(
-                "Metadata for domain {} already specified in this transaction",
-                domain_metadata.domain()
-            )));
-        }
-        Ok(())
-    }
 
     /// Remove domain metadata from the Delta log. This creates a tombstone action in the log to 
     /// logically delete the specified domain. System-controlled domains (those starting with `delta.`) 
     /// cannot be modified.
     pub fn remove_domain_metadata(&mut self, domain: String) -> DeltaResult<()> {
-        let domain_metadata = DomainMetadata::new(domain.clone(), "".to_string(), true);
-        self.validate_domain_metadata(&domain_metadata)?;
-        self.domain_metadata.insert(domain, domain_metadata);
+        let domain_metadata = DomainMetadata::new(domain, "".to_string(), true);
+        self.domain_metadatas.push(domain_metadata);
         Ok(())
     }
 }

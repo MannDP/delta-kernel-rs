@@ -1190,7 +1190,7 @@ async fn test_set_domain_metadata_basic() -> Result<(), Box<dyn std::error::Erro
         setup_test_tables(schema.clone(), &[], None, "test_table").await?
     {
         let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
-        let mut txn = snapshot.transaction()?;
+        let txn = snapshot.transaction()?;
 
         // write context does not conflict with domain metadata in any way
         let _write_context = txn.get_write_context();
@@ -1201,9 +1201,9 @@ async fn test_set_domain_metadata_basic() -> Result<(), Box<dyn std::error::Erro
         let domain2 = "spark.settings";
         let config2 = r#"{"cores": 4}"#;
 
-        txn.set_domain_metadata(domain1.to_string(), config1.to_string())?;
-        txn.set_domain_metadata(domain2.to_string(), config2.to_string())?;
-        txn.commit(&engine)?;
+        txn.with_domain_metadata(domain1.to_string(), config1.to_string())
+            .with_domain_metadata(domain2.to_string(), config2.to_string())
+            .commit(&engine)?;
 
         let commit_data = store
             .get(&Path::from(format!(
@@ -1251,20 +1251,23 @@ async fn test_set_domain_metadata_errors() -> Result<(), Box<dyn std::error::Err
         setup_test_tables(schema.clone(), &[], None, "test_table").await?
     {
         let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
-        let mut txn = snapshot.transaction()?;
 
-        // System domain rejection
+        // Scenario 1: System domain rejection
+        let txn = snapshot.clone().transaction()?;
         let err = txn
-            .set_domain_metadata("delta.system".to_string(), "config".to_string())
+            .with_domain_metadata("delta.system".to_string(), "config".to_string())
+            .commit(&engine)
             .unwrap_err();
         assert!(err
             .to_string()
-            .contains("system-controlled 'delta.*' domain"));
+            .contains("Users cannot modify system controlled metadata domains"));
 
-        // Duplicate domain rejection
-        txn.set_domain_metadata("app.config".to_string(), "v1".to_string())?;
-        let err = txn
-            .set_domain_metadata("app.config".to_string(), "v2".to_string())
+        // Scenario 2: Duplicate domain rejection
+        let txn2 = snapshot.clone().transaction()?;
+        let err = txn2
+            .with_domain_metadata("app.config".to_string(), "v1".to_string())
+            .with_domain_metadata("app.config".to_string(), "v2".to_string())
+            .commit(&engine)
             .unwrap_err();
         assert!(err
             .to_string()

@@ -1,8 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::iter;
 use std::sync::{Arc, LazyLock};
 
-use crate::actions::domain_metadata::DomainMetadataMap;
 use crate::actions::{
     get_log_add_schema, get_log_commit_info_schema, get_log_domain_metadata_schema,
     get_log_txn_schema, DomainMetadata,
@@ -101,7 +100,7 @@ pub struct Transaction {
     // commit-wide timestamp (in milliseconds since epoch) - used in ICT, `txn` action, etc. to
     // keep all timestamps within the same commit consistent.
     commit_timestamp: i64,
-    domain_metadata: DomainMetadataMap,
+    domain_metadatas: Vec<DomainMetadata>,
 }
 
 impl std::fmt::Debug for Transaction {
@@ -138,7 +137,7 @@ impl Transaction {
             add_files_metadata: vec![],
             set_transactions: vec![],
             commit_timestamp,
-            domain_metadata: HashMap::new(),
+            domain_metadatas: vec![],
         })
     }
 
@@ -166,10 +165,26 @@ impl Transaction {
             .into_iter()
             .map(|txn| txn.into_engine_data(get_log_txn_schema().clone(), engine));
 
+        // we cannot have multiple domain metadata actions for the same domain in a single transaction
+        let mut domains = HashSet::new();
+        for domain_metadata in &self.domain_metadatas {
+            if domain_metadata.is_internal() {
+                return Err(Error::Generic(
+                    "Users cannot modify system controlled metadata domains".to_string(),
+                ));
+            }
+            if !domains.insert(domain_metadata.domain()) {
+                return Err(Error::Generic(format!(
+                    "Metadata for domain {} already specified in this transaction",
+                    domain_metadata.domain()
+                )));
+            }
+        }
+
         let set_domain_metadata_actions = self
-            .domain_metadata
+            .domain_metadatas
             .clone()
-            .into_values()
+            .into_iter()
             .map(|dm| dm.into_engine_data(get_log_domain_metadata_schema().clone(), engine));
 
         // step one: construct the iterator of commit info + file actions we want to commit
@@ -280,33 +295,15 @@ impl Transaction {
         self.add_files_metadata.push(add_metadata);
     }
 
-    /// Set domain metadata to be written to the Delta log. Each domain can only be modified once per
-    /// transaction. System-controlled domains (those starting with `delta.`) cannot be modified.
-    pub fn set_domain_metadata(
-        &mut self,
-        domain: String,
-        configuration: String,
-    ) -> DeltaResult<()> {
-        let domain_metadata = DomainMetadata::new(domain.clone(), configuration, false);
-        self.validate_domain_metadata(&domain_metadata)?;
-        self.domain_metadata.insert(domain, domain_metadata);
-        Ok(())
-    }
-
-    fn validate_domain_metadata(&self, domain_metadata: &DomainMetadata) -> DeltaResult<()> {
-        if domain_metadata.is_internal() {
-            return Err(Error::Generic(
-                "User metadata cannot be added to system-controlled 'delta.*' domain".to_string(),
-            ));
-        }
-
-        if self.domain_metadata.contains_key(domain_metadata.domain()) {
-            return Err(Error::Generic(format!(
-                "Metadata for domain {} already specified in this transaction",
-                domain_metadata.domain()
-            )));
-        }
-        Ok(())
+    /// Set domain metadata to be written to the Delta log.
+    /// Note that each domain can only appear once per transaction. That is, multiple configurations
+    /// of the same domain are disallowed in a single transaction, as well as setting and removing
+    /// the same domain in a single transaction. If a duplicate domain is included, the `commit` will
+    /// fail (that is, we don't eagerly check domain validity here).
+    pub fn with_domain_metadata(mut self, domain: String, configuration: String) -> Self {
+        self.domain_metadatas
+            .push(DomainMetadata::new(domain.clone(), configuration, false));
+        self
     }
 }
 

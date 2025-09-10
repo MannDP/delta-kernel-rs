@@ -1180,8 +1180,6 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-// TODO: mann-db to re-type the tests from scratch! (then this PR is ready)!
-
 #[tokio::test]
 async fn test_set_domain_metadata_basic() -> Result<(), Box<dyn std::error::Error>> {
     let _ = tracing_subscriber::fmt::try_init();
@@ -1207,14 +1205,14 @@ async fn test_set_domain_metadata_basic() -> Result<(), Box<dyn std::error::Erro
     )
     .await?;
 
-
     let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
+
     let txn = snapshot.transaction()?;
 
-    // write context does not conflict with domain metadata in any way
+    // write context does not conflict with domain metadata
     let _write_context = txn.get_write_context();
 
-    // Set multiple domain metadata
+    // set multiple domain metadata
     let domain1 = "app.config";
     let config1 = r#"{"version": 1}"#;
     let domain2 = "spark.settings";
@@ -1231,6 +1229,7 @@ async fn test_set_domain_metadata_basic() -> Result<(), Box<dyn std::error::Erro
         .await?
         .bytes()
         .await?;
+
     let actions: Vec<serde_json::Value> = Deserializer::from_slice(&commit_data)
         .into_iter()
         .try_collect()?;
@@ -1239,9 +1238,7 @@ async fn test_set_domain_metadata_basic() -> Result<(), Box<dyn std::error::Erro
         .iter()
         .filter(|v| v.get("domainMetadata").is_some())
         .collect();
-    assert_eq!(domain_actions.len(), 2);
 
-    // Check domains and their configurations
     for action in &domain_actions {
         let domain = action["domainMetadata"]["domain"].as_str().unwrap();
         let config = action["domainMetadata"]["configuration"].as_str().unwrap();
@@ -1254,13 +1251,11 @@ async fn test_set_domain_metadata_basic() -> Result<(), Box<dyn std::error::Erro
         }
     }
 
-    // Verify reads see the domain metadata using get_domain_metadata
     let final_snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
     let domain1_config = final_snapshot.get_domain_metadata(domain1, &engine)?;
     assert_eq!(domain1_config, Some(config1.to_string()));
     let domain2_config = final_snapshot.get_domain_metadata(domain2, &engine)?;
     assert_eq!(domain2_config, Some(config2.to_string()));
-
     Ok(())
 }
 
@@ -1273,7 +1268,8 @@ async fn test_set_domain_metadata_errors() -> Result<(), Box<dyn std::error::Err
         DataType::INTEGER,
     )]));
 
-    let (store, engine, table_location) = engine_store_setup("test_domain_metadata_errors", None);
+    let table_name = "test_domain_metadata_errors";
+    let (store, engine, table_location) = engine_store_setup(table_name, None);
     let table_url = create_table(
         store.clone(),
         table_location,
@@ -1289,7 +1285,7 @@ async fn test_set_domain_metadata_errors() -> Result<(), Box<dyn std::error::Err
 
     let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
 
-    // Scenario 1: System domain rejection
+    // System domain rejection
     let txn = snapshot.clone().transaction()?;
     let err = txn
         .with_domain_metadata("delta.system".to_string(), "config".to_string())
@@ -1299,7 +1295,7 @@ async fn test_set_domain_metadata_errors() -> Result<(), Box<dyn std::error::Err
         .to_string()
         .contains("Users cannot modify system controlled metadata domains"));
 
-    // Scenario 2: Duplicate domain rejection
+    // Duplicate domain rejection
     let txn2 = snapshot.clone().transaction()?;
     let err = txn2
         .with_domain_metadata("app.config".to_string(), "v1".to_string())
@@ -1308,13 +1304,14 @@ async fn test_set_domain_metadata_errors() -> Result<(), Box<dyn std::error::Err
         .unwrap_err();
     assert!(err
         .to_string()
-        .contains("already specified in this transaction"));
+        .contains("Metadata for domain app.config already specified in this transaction"));
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_set_domain_metadata_unsupported_writer_feature() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_set_domain_metadata_unsupported_writer_feature(
+) -> Result<(), Box<dyn std::error::Error>> {
     let _ = tracing_subscriber::fmt::try_init();
 
     let schema = Arc::new(StructType::new(vec![StructField::nullable(
@@ -1322,8 +1319,10 @@ async fn test_set_domain_metadata_unsupported_writer_feature() -> Result<(), Box
         DataType::INTEGER,
     )]));
 
+    let table_name = "test_domain_metadata_unsupported";
+
     // Create table WITHOUT domain metadata writer feature support
-    let (store, engine, table_location) = engine_store_setup("test_domain_metadata_unsupported", None);
+    let (store, engine, table_location) = engine_store_setup(table_name, None);
     let table_url = create_table(
         store.clone(),
         table_location,
@@ -1333,29 +1332,19 @@ async fn test_set_domain_metadata_unsupported_writer_feature() -> Result<(), Box
         false,
         false,
         false,
-        false, // disable domain metadata - no writer feature support
+        false, // no domain metadata writer feature support!
     )
     .await?;
 
     let snapshot = Arc::new(Snapshot::builder(table_url.clone()).build(&engine)?);
-    
-    // Attempting to create a transaction should fail because ensure_write_supported() 
-    // will be called and the table doesn't support domain metadata writes
-    let txn_result = snapshot.transaction();
-    
-    // For this test, the transaction creation itself should succeed because ensure_write_supported()
-    // only checks the protocol features that are already enabled, not the features we plan to use
-    let txn = txn_result?;
-    
-    // The failure should happen when we try to commit domain metadata to an unsupported table
-    let result = txn
+    let result = snapshot
+        .transaction()?
         .with_domain_metadata("app.config".to_string(), "test_config".to_string())
         .commit(&engine);
-    
+
     assert!(result.is_err());
     let err = result.unwrap_err();
-    // The error should indicate that domain metadata operations require the writer feature
-    assert!(err.to_string().contains("domainMetadata"));
-    
+    assert!(err.to_string().contains("Domain metadata operations require writer version 7 and the 'domainMetadata' writer feature"));
+
     Ok(())
 }

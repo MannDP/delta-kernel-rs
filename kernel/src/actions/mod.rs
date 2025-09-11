@@ -893,11 +893,11 @@ impl DomainMetadata {
         &self.domain
     }
 
-    pub(crate) fn new(domain: String, configuration: String, removed: bool) -> Self {
+    pub(crate) fn new(domain: String, configuration: String) -> Self {
         Self {
             domain,
             configuration,
-            removed,
+            removed: false,
         }
     }
 }

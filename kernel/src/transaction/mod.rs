@@ -165,39 +165,8 @@ impl Transaction {
             .into_iter()
             .map(|txn| txn.into_engine_data(get_log_txn_schema().clone(), engine));
 
-        // Validate that the table supports domain metadata operations if we're writing any
-        if !self.domain_metadatas.is_empty()
-            && !self
-                .read_snapshot
-                .table_configuration()
-                .is_domain_metadata_supported()
-        {
-            return Err(Error::unsupported(
-                "Domain metadata operations require writer version 7 and the 'domainMetadata' writer feature"
-            ));
-        }
-
-        // we cannot have multiple domain metadata actions for the same domain in a single transaction
-        let mut domains = HashSet::new();
-        for domain_metadata in &self.domain_metadatas {
-            if domain_metadata.is_internal() {
-                return Err(Error::Generic(
-                    "Users cannot modify system controlled metadata domains".to_string(),
-                ));
-            }
-            if !domains.insert(domain_metadata.domain()) {
-                return Err(Error::Generic(format!(
-                    "Metadata for domain {} already specified in this transaction",
-                    domain_metadata.domain()
-                )));
-            }
-        }
-
-        let set_domain_metadata_actions = self
-            .domain_metadatas
-            .clone()
-            .into_iter()
-            .map(|dm| dm.into_engine_data(get_log_domain_metadata_schema().clone(), engine));
+        let domain_metadata_actions =
+            generate_domain_metadata_actions(engine, &self.domain_metadatas, &self.read_snapshot)?;
 
         // step one: construct the iterator of commit info + file actions we want to commit
         let commit_info = CommitInfo::new(
@@ -214,7 +183,7 @@ impl Transaction {
         let actions = iter::once(commit_info_action)
             .chain(add_actions)
             .chain(set_transaction_actions)
-            .chain(set_domain_metadata_actions);
+            .chain(domain_metadata_actions);
 
         // step two: set new commit version (current_version + 1) and path to write
         let commit_version = self.read_snapshot.version() + 1;
@@ -314,9 +283,48 @@ impl Transaction {
     /// fail (that is, we don't eagerly check domain validity here).
     pub fn with_domain_metadata(mut self, domain: String, configuration: String) -> Self {
         self.domain_metadatas
-            .push(DomainMetadata::new(domain.clone(), configuration, false));
+            .push(DomainMetadata::new(domain, configuration));
         self
     }
+}
+
+/// Generate domain metadata actions with validation.
+fn generate_domain_metadata_actions<'a>(
+    engine: &'a dyn Engine,
+    domain_metadatas: &'a [DomainMetadata],
+    read_snapshot: &Snapshot,
+) -> DeltaResult<impl Iterator<Item = DeltaResult<Box<dyn EngineData>>> + 'a> {
+    // if there are domain metadata actions, the table must support it
+    if !domain_metadatas.is_empty()
+        && !read_snapshot
+            .table_configuration()
+            .is_domain_metadata_supported()
+    {
+        return Err(Error::unsupported(
+            "Domain metadata operations require writer version 7 and the 'domainMetadata' writer feature"
+        ));
+    }
+
+    // cannot have multiple actions for the same domain in a txn
+    let mut domains = HashSet::new();
+    for domain_metadata in domain_metadatas {
+        if domain_metadata.is_internal() {
+            return Err(Error::Generic(
+                "Users cannot modify system controlled metadata domains".to_string(),
+            ));
+        }
+        if !domains.insert(domain_metadata.domain()) {
+            return Err(Error::Generic(format!(
+                "Metadata for domain {} already specified in this transaction",
+                domain_metadata.domain()
+            )));
+        }
+    }
+
+    Ok(domain_metadatas
+        .iter()
+        .cloned()
+        .map(move |dm| dm.into_engine_data(get_log_domain_metadata_schema().clone(), engine)))
 }
 
 /// Convert file metadata provided by the engine into protocol-compliant add actions.

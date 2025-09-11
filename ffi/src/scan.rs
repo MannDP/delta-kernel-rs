@@ -96,7 +96,7 @@ pub unsafe extern "C" fn free_scan(scan: Handle<SharedScan>) {
 pub unsafe extern "C" fn scan(
     snapshot: Handle<SharedSnapshot>,
     engine: Handle<SharedExternEngine>,
-    predicate: Option<&mut EnginePredicate>,
+    predicate: Option<&mut EnginePredicate>, // TODO: add schema here!
 ) -> ExternResult<Handle<SharedScan>> {
     let snapshot = unsafe { snapshot.clone_as_arc() };
     scan_impl(snapshot, predicate).into_extern_result(&engine.as_ref())

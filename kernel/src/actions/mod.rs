@@ -900,6 +900,14 @@ impl DomainMetadata {
             removed: false,
         }
     }
+
+    pub(crate) fn remove(domain: String) -> Self {
+        Self {
+            domain,
+            configuration: String::new(),
+            removed: true,
+        }
+    }
 }
 
 #[cfg(test)]

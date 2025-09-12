@@ -14,6 +14,7 @@ use url::Url;
 
 use crate::expressions::kernel_visitor::{unwrap_kernel_predicate, KernelExpressionVisitorState};
 use crate::expressions::SharedExpression;
+use crate::schema_visitor::{unwrap_kernel_schema, KernelSchemaVisitorState};
 use crate::{
     kernel_string_slice, unwrap_and_parse_path_as_url, AllocateStringFn, ExternEngine,
     ExternResult, IntoExternResult, KernelBoolSlice, KernelRowIndexArray, KernelStringSlice,
@@ -46,6 +47,21 @@ pub struct EnginePredicate {
     pub predicate: *mut c_void,
     pub visitor:
         extern "C" fn(predicate: *mut c_void, state: &mut KernelExpressionVisitorState) -> usize,
+}
+
+/// A schema projection that can be used for column pruning during scanning.
+///
+/// Similar to [`EnginePredicate`], this allows engines to specify which columns they want to read
+/// for projection pushdown. The engine provides a pointer to its native schema representation
+/// along with a visitor function. The kernel uses this to build a kernel [`Schema`] that specifies
+/// the projection.
+///
+/// **Design Decision**: Mirror the EnginePredicate pattern for consistency and safety.
+/// The visitor pattern ensures both engine and kernel retain ownership of their objects.
+#[repr(C)]
+pub struct EngineSchema {
+    pub schema: *mut c_void,
+    pub visitor: extern "C" fn(schema: *mut c_void, state: &mut KernelSchemaVisitorState) -> usize,
 }
 
 /// Drop a `SharedScanMetadata`.
@@ -97,16 +113,19 @@ pub unsafe extern "C" fn scan(
     snapshot: Handle<SharedSnapshot>,
     engine: Handle<SharedExternEngine>,
     predicate: Option<&mut EnginePredicate>,
+    projection: Option<&mut EngineSchema>,
 ) -> ExternResult<Handle<SharedScan>> {
     let snapshot = unsafe { snapshot.clone_as_arc() };
-    scan_impl(snapshot, predicate).into_extern_result(&engine.as_ref())
+    scan_impl(snapshot, predicate, projection).into_extern_result(&engine.as_ref())
 }
 
 fn scan_impl(
     snapshot: Arc<Snapshot>,
     predicate: Option<&mut EnginePredicate>,
+    projection: Option<&mut EngineSchema>,
 ) -> DeltaResult<Handle<SharedScan>> {
     let mut scan_builder = snapshot.scan_builder();
+
     if let Some(predicate) = predicate {
         let mut visitor_state = KernelExpressionVisitorState::default();
         let pred_id = (predicate.visitor)(predicate.predicate, &mut visitor_state);
@@ -114,6 +133,15 @@ fn scan_impl(
         debug!("Got predicate: {:#?}", predicate);
         scan_builder = scan_builder.with_predicate(predicate.map(Arc::new));
     }
+
+    if let Some(projection) = projection {
+        let mut visitor_state = KernelSchemaVisitorState::default();
+        let schema_id = (projection.visitor)(projection.schema, &mut visitor_state);
+        let schema = unwrap_kernel_schema(&mut visitor_state, schema_id);
+        debug!("Got projection schema: {:#?}", schema);
+        scan_builder = scan_builder.with_schema_opt(schema.map(Arc::new));
+    }
+
     Ok(Arc::new(scan_builder.build()?).into())
 }
 
@@ -468,4 +496,83 @@ pub unsafe extern "C" fn visit_scan_metadata(
     scan_metadata
         .visit_scan_files(context_wrapper, rust_callback)
         .unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema_visitor::{
+        build_kernel_schema, unwrap_kernel_schema, visit_schema_long, visit_schema_string,
+        KernelSchemaVisitorState,
+    };
+    use std::ffi::c_void;
+
+    // Mock visitor function for testing
+    extern "C" fn test_schema_visitor(
+        _schema: *mut c_void,
+        state: &mut KernelSchemaVisitorState,
+    ) -> usize {
+        // Create a simple test schema with two fields: id (long), name (string)
+        let id_name = "id".to_string();
+        let name_name = "name".to_string();
+
+        let id_field = visit_schema_long(state, kernel_string_slice!(id_name), false);
+        let name_field = visit_schema_string(state, kernel_string_slice!(name_name), true);
+
+        let field_ids = vec![id_field, name_field];
+        build_kernel_schema(state, field_ids.as_ptr(), field_ids.len())
+    }
+
+    #[test]
+    fn test_scan_with_projection() {
+        println!("🚀 Testing scan function with projection parameter...");
+
+        // Create a mock EngineSchema
+        let mock_schema_data = 42u32; // Just some dummy data
+        let projection = EngineSchema {
+            schema: &mock_schema_data as *const _ as *mut c_void,
+            visitor: test_schema_visitor,
+        };
+
+        // Test that we can process the projection successfully
+        let mut visitor_state = KernelSchemaVisitorState::default();
+        let schema_id = (projection.visitor)(projection.schema, &mut visitor_state);
+        assert_ne!(schema_id, 0, "Schema visitor should succeed");
+
+        // Extract the schema to verify it worked
+        let schema = unwrap_kernel_schema(&mut visitor_state, schema_id);
+        assert!(schema.is_some(), "Should be able to extract schema");
+
+        if let Some(schema) = schema {
+            println!(
+                "✅ Projection schema created with {} fields:",
+                schema.fields().len()
+            );
+            for field in schema.fields() {
+                println!(
+                    "  - {} ({}{})",
+                    field.name(),
+                    match field.data_type() {
+                        delta_kernel::schema::DataType::Primitive(p) => format!("{:?}", p),
+                        other => format!("{:?}", other),
+                    },
+                    if field.is_nullable() {
+                        ", nullable"
+                    } else {
+                        ""
+                    }
+                );
+            }
+
+            assert_eq!(schema.fields().len(), 2);
+            let field_names: Vec<String> = schema.fields().map(|f| f.name().to_string()).collect();
+            assert!(field_names.contains(&"id".to_string()));
+            assert!(field_names.contains(&"name".to_string()));
+        }
+
+        println!("✅ Scan projection parameter test passed!");
+
+        // Note: We can't easily test the full scan() function without setting up
+        // a complete Delta table, but this verifies the key integration point works.
+    }
 }

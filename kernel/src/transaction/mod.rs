@@ -219,7 +219,11 @@ impl Transaction {
             )
         };
 
-        let domain_metadata_actions = Self::generate_domain_metadata_actions(engine, &self.domain_metadatas, &self.read_snapshot)?;
+        let domain_metadata_actions = Self::generate_domain_metadata_actions(
+            engine,
+            &self.domain_metadatas,
+            &self.read_snapshot,
+        )?;
 
         // Step 4: Commit the actions as a JSON file to the Delta log
         let commit_path =

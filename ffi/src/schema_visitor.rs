@@ -15,6 +15,11 @@ use delta_kernel::schema::{
 use delta_kernel::DeltaResult;
 use std::collections::HashMap;
 
+/// Helper to convert optional metadata to HashMap
+fn extract_metadata(metadata: Option<&CStringMap>) -> HashMap<String, MetadataValue> {
+    metadata.map_or_else(HashMap::new, |m| m.to_metadata_map())
+}
+
 /// Element types that can be built during schema construction
 pub(crate) enum SchemaElement {
     /// A complete field (name + data type + metadata)
@@ -76,7 +81,7 @@ pub fn unwrap_kernel_schema(
         SchemaElement::Schema(schema) => Some(schema),
         SchemaElement::Field(field) => {
             // Convert single field to schema with one field
-            Some(StructType::new([field].into_iter()))
+            Some(StructType::new([field]))
         }
         SchemaElement::DataType(DataType::Struct(struct_type)) => Some(*struct_type),
         _ => None,
@@ -88,6 +93,14 @@ pub fn unwrap_kernel_schema(
 // =============================================================================
 
 /// Create a String field - returns field ID for composition
+///
+/// # Safety
+///
+/// Caller must ensure:
+/// - `state` is a valid mutable reference to KernelSchemaVisitorState
+/// - `name` is a valid KernelStringSlice with proper lifetime
+/// - `metadata` is either None or points to a valid CStringMap
+/// - `allocate_error` is a valid function pointer for error allocation
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_string(
     state: &mut KernelSchemaVisitorState,
@@ -97,7 +110,7 @@ pub unsafe extern "C" fn visit_schema_string(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_string_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -116,6 +129,11 @@ fn visit_schema_string_impl(
     Ok(wrap_field(state, field))
 }
 
+/// Create a Long field
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_long(
     state: &mut KernelSchemaVisitorState,
@@ -125,7 +143,7 @@ pub unsafe extern "C" fn visit_schema_long(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_long_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -144,6 +162,11 @@ fn visit_schema_long_impl(
     Ok(wrap_field(state, field))
 }
 
+/// Create an Integer field
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_integer(
     state: &mut KernelSchemaVisitorState,
@@ -153,7 +176,7 @@ pub unsafe extern "C" fn visit_schema_integer(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_integer_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -172,6 +195,11 @@ fn visit_schema_integer_impl(
     Ok(wrap_field(state, field))
 }
 
+/// Create a Boolean field
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_boolean(
     state: &mut KernelSchemaVisitorState,
@@ -181,7 +209,7 @@ pub unsafe extern "C" fn visit_schema_boolean(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_boolean_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -200,6 +228,11 @@ fn visit_schema_boolean_impl(
     Ok(wrap_field(state, field))
 }
 
+/// Create a Double field
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_double(
     state: &mut KernelSchemaVisitorState,
@@ -209,7 +242,7 @@ pub unsafe extern "C" fn visit_schema_double(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_double_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -229,6 +262,10 @@ fn visit_schema_double_impl(
 }
 
 /// Create a Short field (i16)
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_short(
     state: &mut KernelSchemaVisitorState,
@@ -238,7 +275,7 @@ pub unsafe extern "C" fn visit_schema_short(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_short_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -258,6 +295,10 @@ fn visit_schema_short_impl(
 }
 
 /// Create a Byte field (i8)
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_byte(
     state: &mut KernelSchemaVisitorState,
@@ -267,7 +308,7 @@ pub unsafe extern "C" fn visit_schema_byte(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_byte_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -287,6 +328,10 @@ fn visit_schema_byte_impl(
 }
 
 /// Create a Float field (f32)
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_float(
     state: &mut KernelSchemaVisitorState,
@@ -296,7 +341,7 @@ pub unsafe extern "C" fn visit_schema_float(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_float_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -316,6 +361,10 @@ fn visit_schema_float_impl(
 }
 
 /// Create a Binary field
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_binary(
     state: &mut KernelSchemaVisitorState,
@@ -325,7 +374,7 @@ pub unsafe extern "C" fn visit_schema_binary(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_binary_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -345,6 +394,10 @@ fn visit_schema_binary_impl(
 }
 
 /// Create a Date field
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_date(
     state: &mut KernelSchemaVisitorState,
@@ -354,7 +407,7 @@ pub unsafe extern "C" fn visit_schema_date(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_date_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -374,6 +427,10 @@ fn visit_schema_date_impl(
 }
 
 /// Create a Timestamp field (microsecond precision, UTC)
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_timestamp(
     state: &mut KernelSchemaVisitorState,
@@ -383,7 +440,7 @@ pub unsafe extern "C" fn visit_schema_timestamp(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_timestamp_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -403,6 +460,10 @@ fn visit_schema_timestamp_impl(
 }
 
 /// Create a TimestampNtz field (no timezone)
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_timestamp_ntz(
     state: &mut KernelSchemaVisitorState,
@@ -412,7 +473,7 @@ pub unsafe extern "C" fn visit_schema_timestamp_ntz(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_timestamp_ntz_impl(state, name_str, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -432,18 +493,26 @@ fn visit_schema_timestamp_ntz_impl(
 }
 
 /// Create a Decimal field with precision and scale
+///
+/// # Safety
+///
+/// Caller must ensure:
+/// - `state` is a valid mutable reference to KernelSchemaVisitorState
+/// - `name` is a valid KernelStringSlice with proper lifetime
+/// - `metadata` is either None or points to a valid CStringMap
+/// - `allocate_error` is a valid function pointer for error allocation
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_decimal(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     precision: u8,
-    scale: i8,
+    scale: u8,
     nullable: bool,
     metadata: Option<&CStringMap>,
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_decimal_impl(state, name_str, precision, scale, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -452,13 +521,13 @@ fn visit_schema_decimal_impl(
     state: &mut KernelSchemaVisitorState,
     name: DeltaResult<&str>,
     precision: u8,
-    scale: i8,
+    scale: u8,
     nullable: bool,
     metadata: HashMap<String, MetadataValue>,
 ) -> DeltaResult<usize> {
     let name_str = name?.to_string();
 
-    let decimal_type = DecimalType::try_new(precision, scale as u8)
+    let decimal_type = DecimalType::try_new(precision, scale)
         .map_err(|e| delta_kernel::Error::generic(format!("Invalid decimal type precision/scale: {}", e)))?;
     let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Decimal(decimal_type)), nullable)
         .with_metadata(metadata);
@@ -472,6 +541,13 @@ fn visit_schema_decimal_impl(
 
 /// Create a Struct field from child field IDs
 /// Engine provides array of field IDs that become the struct's fields
+///
+/// # Safety
+///
+/// Caller must ensure:
+/// - All base parameters are valid as per visit_schema_string
+/// - `field_ids` points to a valid array of `field_count` usize elements
+/// - All field IDs in the array are valid field IDs from previous visitor calls
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_struct(
     state: &mut KernelSchemaVisitorState,
@@ -483,7 +559,7 @@ pub unsafe extern "C" fn visit_schema_struct(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     let field_slice = unsafe { std::slice::from_raw_parts(field_ids, field_count) };
     visit_schema_struct_impl(state, name_str, field_slice, nullable, metadata_map)
         .into_extern_result(&allocate_error)
@@ -508,7 +584,7 @@ fn visit_schema_struct_impl(
         }
     }
 
-    let struct_type = StructType::new(field_vec.into_iter());
+    let struct_type = StructType::new(field_vec);
     let data_type = DataType::Struct(Box::new(struct_type));
 
     let field = StructField::new(name_str, data_type, nullable)
@@ -519,6 +595,12 @@ fn visit_schema_struct_impl(
 
 /// Create an Array field from element type ID
 /// Engine provides the ID of the element type (could be primitive or complex)
+///
+/// # Safety
+///
+/// Caller must ensure:
+/// - All base parameters are valid as per visit_schema_string
+/// - `element_type_id` is a valid type ID from a previous visitor call
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_array(
     state: &mut KernelSchemaVisitorState,
@@ -530,7 +612,7 @@ pub unsafe extern "C" fn visit_schema_array(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_array_impl(state, name_str, element_type_id, contains_null, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -562,6 +644,12 @@ fn visit_schema_array_impl(
 
 /// Create a Map field from key and value type IDs
 /// Engine provides IDs for both key type and value type
+///
+/// # Safety
+///
+/// Caller must ensure:
+/// - All base parameters are valid as per visit_schema_string
+/// - `key_type_id` and `value_type_id` are valid type IDs from previous visitor calls
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_map(
     state: &mut KernelSchemaVisitorState,
@@ -574,7 +662,7 @@ pub unsafe extern "C" fn visit_schema_map(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_map_impl(state, name_str, key_type_id, value_type_id, value_contains_null, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -611,6 +699,12 @@ fn visit_schema_map_impl(
 
 /// Create a Variant field (for semi-structured data)
 /// Takes a struct type ID that defines the variant schema
+///
+/// # Safety
+///
+/// Caller must ensure:
+/// - All base parameters are valid as per visit_schema_string
+/// - `variant_struct_id` is a valid struct type ID from a previous visitor call
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_variant(
     state: &mut KernelSchemaVisitorState,
@@ -621,7 +715,7 @@ pub unsafe extern "C" fn visit_schema_variant(
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
-    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let metadata_map = extract_metadata(metadata);
     visit_schema_variant_impl(state, name_str, variant_struct_id, nullable, metadata_map)
         .into_extern_result(&allocate_error)
 }
@@ -654,6 +748,14 @@ fn visit_schema_variant_impl(
 
 /// Build final schema from array of field IDs
 /// This is the final step - takes root-level field IDs and creates a StructType
+///
+/// # Safety
+///
+/// Caller must ensure:
+/// - `state` is a valid mutable reference to KernelSchemaVisitorState
+/// - `field_ids` points to a valid array of `field_count` usize elements
+/// - All field IDs in the array are valid field IDs from previous visitor calls
+/// - `allocate_error` is a valid function pointer for error allocation
 #[no_mangle]
 pub unsafe extern "C" fn build_kernel_schema(
     state: &mut KernelSchemaVisitorState,
@@ -680,7 +782,7 @@ fn build_kernel_schema_impl(
         }
     }
 
-    let schema = StructType::new(field_vec.into_iter());
+    let schema = StructType::new(field_vec);
     Ok(wrap_schema(state, schema))
 }
 
@@ -728,7 +830,7 @@ fn create_primitive_type_impl(
 pub extern "C" fn create_decimal_type(
     state: &mut KernelSchemaVisitorState,
     precision: u8,
-    scale: i8,
+    scale: u8,
     allocate_error: AllocateErrorFn,
 ) -> ExternResult<usize> {
     unsafe { create_decimal_type_impl(state, precision, scale)
@@ -738,9 +840,9 @@ pub extern "C" fn create_decimal_type(
 fn create_decimal_type_impl(
     state: &mut KernelSchemaVisitorState,
     precision: u8,
-    scale: i8,
+    scale: u8,
 ) -> DeltaResult<usize> {
-    let decimal_type = DecimalType::try_new(precision, scale as u8)
+    let decimal_type = DecimalType::try_new(precision, scale)
         .map_err(|e| delta_kernel::Error::generic(format!("Invalid decimal type precision/scale: {}", e)))?;
     let data_type = DataType::Primitive(PrimitiveType::Decimal(decimal_type));
     Ok(wrap_data_type(state, data_type))
@@ -751,6 +853,10 @@ fn create_decimal_type_impl(
 // =============================================================================
 
 /// Simple string field creation (no metadata) - backward compatibility
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_string_simple(
     state: &mut KernelSchemaVisitorState,
@@ -762,6 +868,10 @@ pub unsafe extern "C" fn visit_schema_string_simple(
 }
 
 /// Simple long field creation (no metadata) - backward compatibility
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_long_simple(
     state: &mut KernelSchemaVisitorState,
@@ -773,6 +883,10 @@ pub unsafe extern "C" fn visit_schema_long_simple(
 }
 
 /// Simple boolean field creation (no metadata) - backward compatibility
+///
+/// # Safety
+///
+/// Caller must ensure all parameters are valid as per visit_schema_string
 #[no_mangle]
 pub unsafe extern "C" fn visit_schema_boolean_simple(
     state: &mut KernelSchemaVisitorState,

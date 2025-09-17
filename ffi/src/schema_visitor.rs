@@ -7,10 +7,12 @@
 //! Supports all Delta types including nested structures, arrays, maps, and variants.
 //! Uses proper recursive building with dependency handling.
 
-use crate::{KernelStringSlice, ReferenceSet, TryFromStringSlice};
+use crate::scan::CStringMap;
+use crate::{AllocateErrorFn, ExternResult, IntoExternResult, KernelStringSlice, ReferenceSet, TryFromStringSlice};
 use delta_kernel::schema::{
-    ArrayType, DataType, DecimalType, MapType, PrimitiveType, StructField, StructType,
+    ArrayType, DataType, DecimalType, MapType, MetadataValue, PrimitiveType, StructField, StructType,
 };
+use delta_kernel::DeltaResult;
 use std::collections::HashMap;
 
 /// Element types that can be built during schema construction
@@ -87,290 +89,381 @@ pub fn unwrap_kernel_schema(
 
 /// Create a String field - returns field ID for composition
 #[no_mangle]
-pub extern "C" fn visit_schema_string(
+pub unsafe extern "C" fn visit_schema_string(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0, // Invalid name -> invalid field
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_string_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::String),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_string_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::String), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 #[no_mangle]
-pub extern "C" fn visit_schema_long(
+pub unsafe extern "C" fn visit_schema_long(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_long_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::Long),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_long_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Long), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 #[no_mangle]
-pub extern "C" fn visit_schema_integer(
+pub unsafe extern "C" fn visit_schema_integer(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_integer_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::Integer),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_integer_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Integer), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 #[no_mangle]
-pub extern "C" fn visit_schema_boolean(
+pub unsafe extern "C" fn visit_schema_boolean(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_boolean_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::Boolean),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_boolean_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Boolean), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 #[no_mangle]
-pub extern "C" fn visit_schema_double(
+pub unsafe extern "C" fn visit_schema_double(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_double_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::Double),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_double_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Double), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 /// Create a Short field (i16)
 #[no_mangle]
-pub extern "C" fn visit_schema_short(
+pub unsafe extern "C" fn visit_schema_short(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_short_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::Short),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_short_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Short), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 /// Create a Byte field (i8)
 #[no_mangle]
-pub extern "C" fn visit_schema_byte(
+pub unsafe extern "C" fn visit_schema_byte(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_byte_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::Byte),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_byte_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Byte), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 /// Create a Float field (f32)
 #[no_mangle]
-pub extern "C" fn visit_schema_float(
+pub unsafe extern "C" fn visit_schema_float(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_float_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::Float),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_float_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Float), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 /// Create a Binary field
 #[no_mangle]
-pub extern "C" fn visit_schema_binary(
+pub unsafe extern "C" fn visit_schema_binary(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_binary_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::Binary),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_binary_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Binary), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 /// Create a Date field
 #[no_mangle]
-pub extern "C" fn visit_schema_date(
+pub unsafe extern "C" fn visit_schema_date(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_date_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::Date),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_date_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Date), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 /// Create a Timestamp field (microsecond precision, UTC)
 #[no_mangle]
-pub extern "C" fn visit_schema_timestamp(
+pub unsafe extern "C" fn visit_schema_timestamp(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_timestamp_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::Timestamp),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_timestamp_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Timestamp), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 /// Create a TimestampNtz field (no timezone)
 #[no_mangle]
-pub extern "C" fn visit_schema_timestamp_ntz(
+pub unsafe extern "C" fn visit_schema_timestamp_ntz(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_timestamp_ntz_impl(state, name_str, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::TimestampNtz),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_timestamp_ntz_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::TimestampNtz), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 /// Create a Decimal field with precision and scale
 #[no_mangle]
-pub extern "C" fn visit_schema_decimal(
+pub unsafe extern "C" fn visit_schema_decimal(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     precision: u8,
     scale: i8,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_decimal_impl(state, name_str, precision, scale, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let decimal_type = DecimalType {
-        precision,
-        scale: scale as u8,
-    };
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Primitive(PrimitiveType::Decimal(decimal_type)),
-        nullable,
-        metadata: HashMap::new(),
-    };
+fn visit_schema_decimal_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    precision: u8,
+    scale: i8,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    wrap_field(state, field)
+    let decimal_type = DecimalType::try_new(precision, scale as u8)
+        .map_err(|e| delta_kernel::Error::generic(format!("Invalid decimal type precision/scale: {}", e)))?;
+    let field = StructField::new(name_str, DataType::Primitive(PrimitiveType::Decimal(decimal_type)), nullable)
+        .with_metadata(metadata);
+
+    Ok(wrap_field(state, field))
 }
 
 // =============================================================================
@@ -380,62 +473,80 @@ pub extern "C" fn visit_schema_decimal(
 /// Create a Struct field from child field IDs
 /// Engine provides array of field IDs that become the struct's fields
 #[no_mangle]
-pub extern "C" fn visit_schema_struct(
+pub unsafe extern "C" fn visit_schema_struct(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     field_ids: *const usize,
     field_count: usize,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    let field_slice = unsafe { std::slice::from_raw_parts(field_ids, field_count) };
+    visit_schema_struct_impl(state, name_str, field_slice, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
+
+fn visit_schema_struct_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    field_ids: &[usize],
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
     // Extract fields from IDs and build struct
     let mut field_vec = Vec::new();
-    let field_slice = unsafe { std::slice::from_raw_parts(field_ids, field_count) };
-
-    for &field_id in field_slice {
+    for &field_id in field_ids {
         if let Some(field) = unwrap_field(state, field_id) {
             field_vec.push(field);
         } else {
-            return 0; // Invalid field -> invalid struct
+            return Err(delta_kernel::Error::generic(format!("Invalid field ID {} in struct", field_id)));
         }
     }
 
     let struct_type = StructType::new(field_vec.into_iter());
     let data_type = DataType::Struct(Box::new(struct_type));
 
-    let field = StructField {
-        name: name_str,
-        data_type,
-        nullable,
-        metadata: HashMap::new(),
-    };
+    let field = StructField::new(name_str, data_type, nullable)
+        .with_metadata(metadata);
 
-    wrap_field(state, field)
+    Ok(wrap_field(state, field))
 }
 
 /// Create an Array field from element type ID
 /// Engine provides the ID of the element type (could be primitive or complex)
 #[no_mangle]
-pub extern "C" fn visit_schema_array(
+pub unsafe extern "C" fn visit_schema_array(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     element_type_id: usize,
     contains_null: bool,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_array_impl(state, name_str, element_type_id, contains_null, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let element_type = match unwrap_data_type(state, element_type_id) {
-        Some(dt) => dt,
-        None => return 0, // Invalid element type -> invalid array
-    };
+fn visit_schema_array_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    element_type_id: usize,
+    contains_null: bool,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
+
+    let element_type = unwrap_data_type(state, element_type_id)
+        .ok_or_else(|| delta_kernel::Error::generic(format!("Invalid element type ID {} for array", element_type_id)))?;
 
     let array_type = ArrayType {
         type_name: "array".to_string(),
@@ -443,41 +554,47 @@ pub extern "C" fn visit_schema_array(
         contains_null,
     };
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Array(Box::new(array_type)),
-        nullable,
-        metadata: HashMap::new(),
-    };
+    let field = StructField::new(name_str, DataType::Array(Box::new(array_type)), nullable)
+        .with_metadata(metadata);
 
-    wrap_field(state, field)
+    Ok(wrap_field(state, field))
 }
 
 /// Create a Map field from key and value type IDs
 /// Engine provides IDs for both key type and value type
 #[no_mangle]
-pub extern "C" fn visit_schema_map(
+pub unsafe extern "C" fn visit_schema_map(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     key_type_id: usize,
     value_type_id: usize,
     value_contains_null: bool,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_map_impl(state, name_str, key_type_id, value_type_id, value_contains_null, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
 
-    let key_type = match unwrap_data_type(state, key_type_id) {
-        Some(dt) => dt,
-        None => return 0,
-    };
+fn visit_schema_map_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    key_type_id: usize,
+    value_type_id: usize,
+    value_contains_null: bool,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
-    let value_type = match unwrap_data_type(state, value_type_id) {
-        Some(dt) => dt,
-        None => return 0,
-    };
+    let key_type = unwrap_data_type(state, key_type_id)
+        .ok_or_else(|| delta_kernel::Error::generic(format!("Invalid key type ID {} for map", key_type_id)))?;
+
+    let value_type = unwrap_data_type(state, value_type_id)
+        .ok_or_else(|| delta_kernel::Error::generic(format!("Invalid value type ID {} for map", value_type_id)))?;
 
     let map_type = MapType {
         type_name: "map".to_string(),
@@ -486,72 +603,85 @@ pub extern "C" fn visit_schema_map(
         value_contains_null,
     };
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Map(Box::new(map_type)),
-        nullable,
-        metadata: HashMap::new(),
-    };
+    let field = StructField::new(name_str, DataType::Map(Box::new(map_type)), nullable)
+        .with_metadata(metadata);
 
-    wrap_field(state, field)
+    Ok(wrap_field(state, field))
 }
 
 /// Create a Variant field (for semi-structured data)
 /// Takes a struct type ID that defines the variant schema
 #[no_mangle]
-pub extern "C" fn visit_schema_variant(
+pub unsafe extern "C" fn visit_schema_variant(
     state: &mut KernelSchemaVisitorState,
     name: KernelStringSlice,
     variant_struct_id: usize,
     nullable: bool,
-) -> usize {
-    let name_str = match unsafe { <&str>::try_from_slice(&name) } {
-        Ok(s) => s.to_string(),
-        Err(_) => return 0,
-    };
+    metadata: Option<&CStringMap>,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    let name_str = unsafe { TryFromStringSlice::try_from_slice(&name) };
+    let metadata_map = metadata.map(|m| m.to_metadata_map()).unwrap_or_default();
+    visit_schema_variant_impl(state, name_str, variant_struct_id, nullable, metadata_map)
+        .into_extern_result(&allocate_error)
+}
+
+fn visit_schema_variant_impl(
+    state: &mut KernelSchemaVisitorState,
+    name: DeltaResult<&str>,
+    variant_struct_id: usize,
+    nullable: bool,
+    metadata: HashMap<String, MetadataValue>,
+) -> DeltaResult<usize> {
+    let name_str = name?.to_string();
 
     // Extract the struct type for the variant
     let variant_struct = match state.elements.take(variant_struct_id) {
         Some(SchemaElement::Schema(schema)) => schema,
         Some(SchemaElement::DataType(DataType::Struct(s))) => *s,
-        _ => return 0,
+        _ => return Err(delta_kernel::Error::generic(format!("Invalid variant struct ID {} - must be Schema or Struct DataType", variant_struct_id))),
     };
 
-    let field = StructField {
-        name: name_str,
-        data_type: DataType::Variant(Box::new(variant_struct)),
-        nullable,
-        metadata: HashMap::new(),
-    };
+    let field = StructField::new(name_str, DataType::Variant(Box::new(variant_struct)), nullable)
+        .with_metadata(metadata);
 
-    wrap_field(state, field)
+    Ok(wrap_field(state, field))
 }
 
 // =============================================================================
 // FFI Functions - Schema Building
 // =============================================================================
 
-/// Build final schema from array of field IDs  
+/// Build final schema from array of field IDs
 /// This is the final step - takes root-level field IDs and creates a StructType
 #[no_mangle]
-pub extern "C" fn build_kernel_schema(
+pub unsafe extern "C" fn build_kernel_schema(
     state: &mut KernelSchemaVisitorState,
     field_ids: *const usize,
     field_count: usize,
-) -> usize {
-    let mut field_vec = Vec::new();
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
     let field_slice = unsafe { std::slice::from_raw_parts(field_ids, field_count) };
+    build_kernel_schema_impl(state, field_slice)
+        .into_extern_result(&allocate_error)
+}
 
-    for &field_id in field_slice {
+fn build_kernel_schema_impl(
+    state: &mut KernelSchemaVisitorState,
+    field_ids: &[usize],
+) -> DeltaResult<usize> {
+    let mut field_vec = Vec::new();
+
+    for &field_id in field_ids {
         if let Some(field) = unwrap_field(state, field_id) {
             field_vec.push(field);
         } else {
-            return 0; // Invalid field -> invalid schema
+            return Err(delta_kernel::Error::generic(format!("Invalid field ID {} in schema", field_id)));
         }
     }
 
     let schema = StructType::new(field_vec.into_iter());
-    wrap_schema(state, schema)
+    Ok(wrap_schema(state, schema))
 }
 
 // =============================================================================
@@ -564,7 +694,16 @@ pub extern "C" fn build_kernel_schema(
 pub extern "C" fn create_primitive_type(
     state: &mut KernelSchemaVisitorState,
     primitive_type: u8, // 0=String, 1=Long, 2=Int, 3=Short, 4=Byte, 5=Float, 6=Double, 7=Bool, 8=Binary, 9=Date, 10=Timestamp, 11=TimestampNtz
-) -> usize {
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    unsafe { create_primitive_type_impl(state, primitive_type)
+        .into_extern_result(&allocate_error) }
+}
+
+fn create_primitive_type_impl(
+    state: &mut KernelSchemaVisitorState,
+    primitive_type: u8,
+) -> DeltaResult<usize> {
     let data_type = match primitive_type {
         0 => DataType::Primitive(PrimitiveType::String),
         1 => DataType::Primitive(PrimitiveType::Long),
@@ -578,10 +717,10 @@ pub extern "C" fn create_primitive_type(
         9 => DataType::Primitive(PrimitiveType::Date),
         10 => DataType::Primitive(PrimitiveType::Timestamp),
         11 => DataType::Primitive(PrimitiveType::TimestampNtz),
-        _ => return 0,
+        _ => return Err(delta_kernel::Error::generic(format!("Invalid primitive type ID: {}", primitive_type))),
     };
 
-    wrap_data_type(state, data_type)
+    Ok(wrap_data_type(state, data_type))
 }
 
 /// Create a decimal DataType with precision/scale
@@ -590,19 +729,72 @@ pub extern "C" fn create_decimal_type(
     state: &mut KernelSchemaVisitorState,
     precision: u8,
     scale: i8,
-) -> usize {
-    let decimal_type = DecimalType {
-        precision,
-        scale: scale as u8,
-    };
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    unsafe { create_decimal_type_impl(state, precision, scale)
+        .into_extern_result(&allocate_error) }
+}
+
+fn create_decimal_type_impl(
+    state: &mut KernelSchemaVisitorState,
+    precision: u8,
+    scale: i8,
+) -> DeltaResult<usize> {
+    let decimal_type = DecimalType::try_new(precision, scale as u8)
+        .map_err(|e| delta_kernel::Error::generic(format!("Invalid decimal type precision/scale: {}", e)))?;
     let data_type = DataType::Primitive(PrimitiveType::Decimal(decimal_type));
-    wrap_data_type(state, data_type)
+    Ok(wrap_data_type(state, data_type))
+}
+
+// =============================================================================
+// Convenience Functions for Backward Compatibility
+// =============================================================================
+
+/// Simple string field creation (no metadata) - backward compatibility
+#[no_mangle]
+pub unsafe extern "C" fn visit_schema_string_simple(
+    state: &mut KernelSchemaVisitorState,
+    name: KernelStringSlice,
+    nullable: bool,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    visit_schema_string(state, name, nullable, None, allocate_error)
+}
+
+/// Simple long field creation (no metadata) - backward compatibility
+#[no_mangle]
+pub unsafe extern "C" fn visit_schema_long_simple(
+    state: &mut KernelSchemaVisitorState,
+    name: KernelStringSlice,
+    nullable: bool,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    visit_schema_long(state, name, nullable, None, allocate_error)
+}
+
+/// Simple boolean field creation (no metadata) - backward compatibility
+#[no_mangle]
+pub unsafe extern "C" fn visit_schema_boolean_simple(
+    state: &mut KernelSchemaVisitorState,
+    name: KernelStringSlice,
+    nullable: bool,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<usize> {
+    visit_schema_boolean(state, name, nullable, None, allocate_error)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::kernel_string_slice;
+    use crate::error::{KernelError, EngineError};
+    use crate::ffi_test_utils::ok_or_panic;
+
+    // Test helper - dummy error allocator
+    #[no_mangle]
+    extern "C" fn test_allocate_error(_: KernelError, _: crate::KernelStringSlice) -> *mut EngineError {
+        std::ptr::null_mut()
+    }
 
     #[test]
     fn test_basic_schema_visitor() {
@@ -611,13 +803,15 @@ mod tests {
         // Create a simple string field
         let test_field = "test_field".to_string();
         let name_slice = kernel_string_slice!(test_field);
-        let field_id = visit_schema_string(&mut state, name_slice, false);
-        assert_ne!(field_id, 0, "Field ID should not be 0 (error)");
+        let field_result = unsafe { visit_schema_string(&mut state, name_slice, false, None, test_allocate_error) };
+        assert!(field_result.is_ok(), "Field creation should succeed");
+        let field_id = ok_or_panic(field_result);
 
         // Build schema from single field
         let field_ids = vec![field_id];
-        let schema_id = build_kernel_schema(&mut state, field_ids.as_ptr(), 1);
-        assert_ne!(schema_id, 0, "Schema ID should not be 0 (error)");
+        let schema_result = unsafe { build_kernel_schema(&mut state, field_ids.as_ptr(), 1, test_allocate_error) };
+        assert!(schema_result.is_ok(), "Schema building should succeed");
+        let schema_id = ok_or_panic(schema_result);
 
         // Extract the schema
         let schema = unwrap_kernel_schema(&mut state, schema_id);
@@ -640,19 +834,13 @@ mod tests {
         let name_name = "name".to_string();
         let active_name = "active".to_string();
 
-        let id_field = visit_schema_long(&mut state, kernel_string_slice!(id_name), false);
-        let name_field = visit_schema_string(&mut state, kernel_string_slice!(name_name), true);
-        let active_field =
-            visit_schema_boolean(&mut state, kernel_string_slice!(active_name), false);
-
-        assert_ne!(id_field, 0);
-        assert_ne!(name_field, 0);
-        assert_ne!(active_field, 0);
+        let id_field = ok_or_panic(unsafe { visit_schema_long(&mut state, kernel_string_slice!(id_name), false, None, test_allocate_error) });
+        let name_field = ok_or_panic(unsafe { visit_schema_string(&mut state, kernel_string_slice!(name_name), true, None, test_allocate_error) });
+        let active_field = ok_or_panic(unsafe { visit_schema_boolean(&mut state, kernel_string_slice!(active_name), false, None, test_allocate_error) });
 
         // Build schema
         let field_ids = vec![id_field, name_field, active_field];
-        let schema_id = build_kernel_schema(&mut state, field_ids.as_ptr(), 3);
-        assert_ne!(schema_id, 0);
+        let schema_id = ok_or_panic(unsafe { build_kernel_schema(&mut state, field_ids.as_ptr(), 3, test_allocate_error) });
 
         // Verify schema
         let schema = unwrap_kernel_schema(&mut state, schema_id);
@@ -679,19 +867,13 @@ mod tests {
         let name_name = "name".to_string();
         let active_name = "active".to_string();
 
-        let id_field = visit_schema_long(&mut state, kernel_string_slice!(id_name), false);
-        let name_field = visit_schema_string(&mut state, kernel_string_slice!(name_name), true);
-        let active_field =
-            visit_schema_boolean(&mut state, kernel_string_slice!(active_name), false);
-
-        assert_ne!(id_field, 0, "ID field creation should succeed");
-        assert_ne!(name_field, 0, "Name field creation should succeed");
-        assert_ne!(active_field, 0, "Active field creation should succeed");
+        let id_field = ok_or_panic(unsafe { visit_schema_long(&mut state, kernel_string_slice!(id_name), false, None, test_allocate_error) });
+        let name_field = ok_or_panic(unsafe { visit_schema_string(&mut state, kernel_string_slice!(name_name), true, None, test_allocate_error) });
+        let active_field = ok_or_panic(unsafe { visit_schema_boolean(&mut state, kernel_string_slice!(active_name), false, None, test_allocate_error) });
 
         // Build final schema
         let field_ids = vec![id_field, name_field, active_field];
-        let schema_id = build_kernel_schema(&mut state, field_ids.as_ptr(), field_ids.len());
-        assert_ne!(schema_id, 0, "Schema building should succeed");
+        let schema_id = ok_or_panic(unsafe { build_kernel_schema(&mut state, field_ids.as_ptr(), field_ids.len(), test_allocate_error) });
 
         // Extract and verify schema
         let schema = unwrap_kernel_schema(&mut state, schema_id);
@@ -800,70 +982,88 @@ mod tests {
 
         println!("🚀 Testing complex nested schema with arrays, maps, and structs...");
 
+        // Define field names
+        let id_name = "id".to_string();
+        let name_name = "name".to_string();
+        let street_name = "street".to_string();
+        let city_name = "city".to_string();
+        let active_name = "active".to_string();
+        let coordinates_name = "coordinates".to_string();
+        let scores_name = "scores".to_string();
+        let metadata_name = "metadata".to_string();
+        let address_name = "address".to_string();
+        let user_name = "user".to_string();
+
         // Step 1: Build leaf types first (bottom-up dependency order)
-        let id_field = visit_schema_long(&mut state, kernel_string_slice!(id_name), false);
-        let name_field = visit_schema_string(&mut state, kernel_string_slice!(name_name), false);
-        let street_field =
-            visit_schema_string(&mut state, kernel_string_slice!(street_name), false);
-        let city_field = visit_schema_string(&mut state, kernel_string_slice!(city_name), false);
-        let active_field =
-            visit_schema_boolean(&mut state, kernel_string_slice!(active_name), false);
+        let id_field = ok_or_panic(unsafe { visit_schema_long(&mut state, kernel_string_slice!(id_name), false, None, test_allocate_error) });
+        let name_field = ok_or_panic(unsafe { visit_schema_string(&mut state, kernel_string_slice!(name_name), false, None, test_allocate_error) });
+        let street_field = ok_or_panic(unsafe { visit_schema_string(&mut state, kernel_string_slice!(street_name), false, None, test_allocate_error) });
+        let city_field = ok_or_panic(unsafe { visit_schema_string(&mut state, kernel_string_slice!(city_name), false, None, test_allocate_error) });
+        let active_field = ok_or_panic(unsafe { visit_schema_boolean(&mut state, kernel_string_slice!(active_name), false, None, test_allocate_error) });
 
         // Step 2: Build array types
-        let double_type = create_primitive_type(&mut state, 6); // 6 = Double
-        let coordinates_field = visit_schema_array(
+        let double_type = ok_or_panic(create_primitive_type(&mut state, 6, test_allocate_error)); // 6 = Double
+        let coordinates_field = ok_or_panic(unsafe { visit_schema_array(
             &mut state,
             kernel_string_slice!(coordinates_name),
             double_type,
             false,
             false,
-        );
+            None,
+            test_allocate_error,
+        ) });
 
-        let float_type = create_primitive_type(&mut state, 5); // 5 = Float
-        let scores_field = visit_schema_array(
+        let float_type = ok_or_panic(create_primitive_type(&mut state, 5, test_allocate_error)); // 5 = Float
+        let scores_field = ok_or_panic(unsafe { visit_schema_array(
             &mut state,
             kernel_string_slice!(scores_name),
             float_type,
             false,
             false,
-        );
+            None,
+            test_allocate_error,
+        ) });
 
         // Step 3: Build map type
-        let string_key_type = create_primitive_type(&mut state, 0); // 0 = String
-        let string_value_type = create_primitive_type(&mut state, 0); // 0 = String
-        let metadata_field = visit_schema_map(
+        let string_key_type = ok_or_panic(create_primitive_type(&mut state, 0, test_allocate_error)); // 0 = String
+        let string_value_type = ok_or_panic(create_primitive_type(&mut state, 0, test_allocate_error)); // 0 = String
+        let metadata_field = ok_or_panic(unsafe { visit_schema_map(
             &mut state,
             kernel_string_slice!(metadata_name),
             string_key_type,
             string_value_type,
             false,
             false,
-        );
+            None,
+            test_allocate_error,
+        ) });
 
         // Step 4: Build nested structs (inside-out)
         let address_fields = vec![street_field, city_field, coordinates_field];
-        let address_field = visit_schema_struct(
+        let address_field = ok_or_panic(unsafe { visit_schema_struct(
             &mut state,
             kernel_string_slice!(address_name),
             address_fields.as_ptr(),
             3,
             false,
-        );
+            None,
+            test_allocate_error,
+        ) });
 
         let user_fields = vec![name_field, address_field, metadata_field];
-        let user_field = visit_schema_struct(
+        let user_field = ok_or_panic(unsafe { visit_schema_struct(
             &mut state,
             kernel_string_slice!(user_name),
             user_fields.as_ptr(),
             3,
             false,
-        );
+            None,
+            test_allocate_error,
+        ) });
 
         // Step 5: Build root schema
         let root_fields = vec![id_field, user_field, scores_field, active_field];
-        let schema_id = build_kernel_schema(&mut state, root_fields.as_ptr(), 4);
-
-        assert_ne!(schema_id, 0, "Complex schema building should succeed");
+        let schema_id = ok_or_panic(unsafe { build_kernel_schema(&mut state, root_fields.as_ptr(), 4, test_allocate_error) });
 
         // Step 6: Verify the complex schema
         let schema = unwrap_kernel_schema(&mut state, schema_id);
@@ -977,20 +1177,25 @@ mod tests {
     fn test_decimal_and_timestamps() {
         let mut state = KernelSchemaVisitorState::default();
 
+        // Define field names
+        let price_name = "price".to_string();
+        let created_at_name = "created_at".to_string();
+        let updated_at_name = "updated_at".to_string();
+        let birth_date_name = "birth_date".to_string();
+        let file_data_name = "file_data".to_string();
+        let score_name = "score".to_string();
+        let count_name = "count".to_string();
+        let flag_name = "flag".to_string();
+
         // Test all the additional primitive types
-        let price_field =
-            visit_schema_decimal(&mut state, kernel_string_slice!(price_name), 10, 2, false); // decimal(10,2)
-        let created_at_field =
-            visit_schema_timestamp(&mut state, kernel_string_slice!(created_at_name), false);
-        let updated_at_field =
-            visit_schema_timestamp_ntz(&mut state, kernel_string_slice!(updated_at_name), true);
-        let birth_date_field =
-            visit_schema_date(&mut state, kernel_string_slice!(birth_date_name), true);
-        let file_data_field =
-            visit_schema_binary(&mut state, kernel_string_slice!(file_data_name), true);
-        let score_field = visit_schema_float(&mut state, kernel_string_slice!(score_name), false);
-        let count_field = visit_schema_short(&mut state, kernel_string_slice!(count_name), false);
-        let flag_field = visit_schema_byte(&mut state, kernel_string_slice!(flag_name), false);
+        let price_field = ok_or_panic(unsafe { visit_schema_decimal(&mut state, kernel_string_slice!(price_name), 10, 2, false, None, test_allocate_error) }); // decimal(10,2)
+        let created_at_field = ok_or_panic(unsafe { visit_schema_timestamp(&mut state, kernel_string_slice!(created_at_name), false, None, test_allocate_error) });
+        let updated_at_field = ok_or_panic(unsafe { visit_schema_timestamp_ntz(&mut state, kernel_string_slice!(updated_at_name), true, None, test_allocate_error) });
+        let birth_date_field = ok_or_panic(unsafe { visit_schema_date(&mut state, kernel_string_slice!(birth_date_name), true, None, test_allocate_error) });
+        let file_data_field = ok_or_panic(unsafe { visit_schema_binary(&mut state, kernel_string_slice!(file_data_name), true, None, test_allocate_error) });
+        let score_field = ok_or_panic(unsafe { visit_schema_float(&mut state, kernel_string_slice!(score_name), false, None, test_allocate_error) });
+        let count_field = ok_or_panic(unsafe { visit_schema_short(&mut state, kernel_string_slice!(count_name), false, None, test_allocate_error) });
+        let flag_field = ok_or_panic(unsafe { visit_schema_byte(&mut state, kernel_string_slice!(flag_name), false, None, test_allocate_error) });
 
         let field_ids = vec![
             price_field,
@@ -1002,7 +1207,7 @@ mod tests {
             count_field,
             flag_field,
         ];
-        let schema_id = build_kernel_schema(&mut state, field_ids.as_ptr(), 8);
+        let schema_id = ok_or_panic(unsafe { build_kernel_schema(&mut state, field_ids.as_ptr(), 8, test_allocate_error) });
 
         let schema = unwrap_kernel_schema(&mut state, schema_id);
         assert!(

@@ -334,6 +334,18 @@ impl From<HashMap<String, String>> for CStringMap {
     }
 }
 
+impl CStringMap {
+    /// Get all key-value pairs as an iterator
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.values.iter()
+    }
+
+    /// Convert to HashMap for metadata purposes
+    pub fn to_metadata_map(&self) -> HashMap<String, delta_kernel::schema::MetadataValue> {
+        self.values.iter().map(|(k, v)| (k.clone(), delta_kernel::schema::MetadataValue::String(v.clone()))).collect()
+    }
+}
+
 #[no_mangle]
 /// allow probing into a CStringMap. If the specified key is in the map, kernel will call
 /// allocate_fn with the value associated with the key and return the value returned from that
@@ -512,15 +524,23 @@ mod tests {
         _schema: *mut c_void,
         state: &mut KernelSchemaVisitorState,
     ) -> usize {
+        use crate::error::{KernelError, EngineError};
+        use crate::ffi_test_utils::ok_or_panic;
+
+        // Test error allocator
+        extern "C" fn test_allocate_error(_: KernelError, _: crate::KernelStringSlice) -> *mut EngineError {
+            std::ptr::null_mut()
+        }
+
         // Create a simple test schema with two fields: id (long), name (string)
         let id_name = "id".to_string();
         let name_name = "name".to_string();
 
-        let id_field = visit_schema_long(state, kernel_string_slice!(id_name), false);
-        let name_field = visit_schema_string(state, kernel_string_slice!(name_name), true);
+        let id_field = ok_or_panic(unsafe { visit_schema_long(state, kernel_string_slice!(id_name), false, None, test_allocate_error) });
+        let name_field = ok_or_panic(unsafe { visit_schema_string(state, kernel_string_slice!(name_name), true, None, test_allocate_error) });
 
         let field_ids = vec![id_field, name_field];
-        build_kernel_schema(state, field_ids.as_ptr(), field_ids.len())
+        ok_or_panic(unsafe { build_kernel_schema(state, field_ids.as_ptr(), field_ids.len(), test_allocate_error) })
     }
 
     #[test]
